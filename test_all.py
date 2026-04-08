@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from models import ActionType, CellType, Position, Task, ResetRequest, StepRequest
+from warehouse_env.models import ActionType, CellType, Position, Task, ResetRequest, StepRequest
 from environment import WarehouseEnvironment, GRID_SIZE
 from grader import compute_score, score_episode
 

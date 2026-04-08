@@ -22,7 +22,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from models import (
+from warehouse_env.models import (
     ActionType, CellType, Position, Task, ObstacleState,
     PartialObservation, StepReward, StepInfo, FullState,
     Action,

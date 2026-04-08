@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from models import (
+from warehouse_env.models import (
     HealthResponse, ResetRequest, ResetResponse,
     StepRequest, StepResponse, FullState,
     PartialObservation,
@@ -41,7 +41,7 @@ app.add_middleware(
 
 # Single environment instance (stateful per session)
 env = WarehouseEnvironment()
-UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
+UI_PATH = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 
 
 # ─────────────────────────────────────────
@@ -140,4 +140,4 @@ def state():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=False)

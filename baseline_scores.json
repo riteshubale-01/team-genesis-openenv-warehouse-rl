@@ -1,33 +1,17 @@
 {
   "benchmark": "WarehouseRL-v1",
-  "model": "meta-llama/Llama-3.1-8B-Instruct",
-  "api_base_url": "https://router.huggingface.co/v1",
+  "model": "gpt-4o-mini",
+  "api_base_url": "https://api.openai.com/v1",
   "seed": 42,
   "results": [
     {
       "difficulty": "easy",
       "seed": 42,
-      "steps": 150,
-      "score": 0.2375,
-      "success": true,
-      "total_reward": -56.7
-    },
-    {
-      "difficulty": "medium",
-      "seed": 42,
-      "steps": 100,
-      "score": 0.2888,
-      "success": true,
-      "total_reward": -48.2
-    },
-    {
-      "difficulty": "hard",
-      "seed": 42,
-      "steps": 67,
-      "score": 0.3498,
-      "success": true,
-      "total_reward": -32.9
+      "steps": 0,
+      "score": 0.0,
+      "success": false,
+      "total_reward": 0
     }
   ],
-  "aggregate_score": 0.292
+  "aggregate_score": 0.0
 }

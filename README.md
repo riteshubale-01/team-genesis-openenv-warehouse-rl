@@ -1,38 +1,14 @@
 ---
-title: Warehouse RL Environment
-emoji: 🚀
-colorFrom: blue
-colorTo: purple
-sdk: gradio
-app_file: inference.py
-pinned: false
----
-
-## 🌐 Live Demo
-https://huggingface.co/spaces/riteshu1/team-genesis-openenv-warehouse-rl
-
-## 🎮 Try It Yourself
-
-1. Click "Reset"
-2. Choose difficulty
-3. Use actions OR enable Auto mode
-4. Observe reward, battery, and task completion
-
-## 🏆 Real-World Impact
-
-This environment simulates logistics optimization problems faced by large-scale warehouses (e.g., Amazon, Flipkart), where agents must balance efficiency, safety, and resource constraints under uncertainty.
-
----
 title: Team Genesis Openenv Warehouse RL
 emoji: 🤖
 colorFrom: indigo
-colorTo: purple
+colorTo: blue
 sdk: docker
 pinned: false
 license: mit
 ---
 
-=======
+
 # 🏭 WarehouseRL-v1 — OpenEnv Hackathon Submission
 
 A production-grade reinforcement learning environment simulating real-world warehouse robot decision-making under uncertainty — inspired by systems at Amazon and Flipkart.

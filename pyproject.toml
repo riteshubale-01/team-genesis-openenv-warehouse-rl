@@ -1,4 +1,7 @@
 [project]
+name = "team-genesis-openenv-warehouse-rl"
+version = "0.1.0"
+requires-python = ">=3.10"
 dependencies = [
   "openenv-core>=0.2.0",
   "fastapi",
@@ -10,6 +13,10 @@ dependencies = [
 
 [project.scripts]
 server = "server.app:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.openenv]
 mode = "multi"

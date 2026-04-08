@@ -59,7 +59,10 @@ def require_hf_token() -> str:
     return HF_TOKEN
 
 
-def create_openai_client() -> OpenAI:
+def create_openai_client() -> OpenAI | None:
+    # Allow baseline execution without secrets by using heuristic fallback only.
+    if not HF_TOKEN:
+        return None
     return OpenAI(base_url=API_BASE_URL, api_key=require_hf_token())
 
 
@@ -253,7 +256,7 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
 # Main inference loop
 # ─────────────────────────────────────────
 
-def run_episode(client: OpenAI, difficulty: str, seed: int) -> Dict[str, Any]:
+def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, Any]:
     task_name = f"{TASK_NAME}_{difficulty}"
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
@@ -261,7 +264,7 @@ def run_episode(client: OpenAI, difficulty: str, seed: int) -> Dict[str, Any]:
     step_infos: List[Dict[str, Any]] = []
     step_n = 0
     success = False
-    use_heuristic_fallback = False
+    use_heuristic_fallback = client is None
 
     try:
         reset_data = env_reset(seed=seed, difficulty=difficulty)
@@ -282,6 +285,8 @@ def run_episode(client: OpenAI, difficulty: str, seed: int) -> Dict[str, Any]:
                     conversation.append({"role": "user", "content": user_msg})
                     if len(conversation) > 7:
                         conversation = [conversation[0]] + conversation[-6:]
+                    if client is None:
+                        raise RuntimeError("LLM client unavailable")
                     raw = call_llm(client, conversation)
                     action = parse_action(raw)
                     conversation.append({"role": "assistant", "content": str(action)})
