@@ -1,27 +1,16 @@
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "warehouse-openenv"
+name = "warehouse-rl"
 version = "0.1.0"
-description = "Warehouse RL OpenEnv environment"
-authors = [{ name = "Ritesh Ubale" }]
-readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
+
 dependencies = [
+    "openenv-core>=0.2.0",
     "fastapi",
-    "uvicorn",
-    "pydantic",
-    "numpy"
+    "uvicorn"
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
+[project.scripts]
+server = "server.app:app"
 
 [tool.openenv]
-name = "WarehouseRL-v1"
-version = "1.0.0"
-entry = "inference.py"
-output_format = "openenv_v1"
 mode = "multi"
