@@ -1,0 +1,16 @@
+Warehouse RL
+name = "warehouse-openenv"
+version = "0.1.0"
+description = "Warehouse RL OpenEnv environment for Meta x PyTorch Hackathon"
+authors = [
+    { name = "Ritesh Ubale" }
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "numpy"
+]
+
+[tool.setuptools]
+py-modules = ["environment", "grader", "models", "inference"]
