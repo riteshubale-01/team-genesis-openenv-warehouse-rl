@@ -1,3 +1,13 @@
+---
+title: Warehouse RL Environment
+emoji: 🚀
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+app_file: inference.py
+pinned: false
+---
+
 ## 🌐 Live Demo
 https://huggingface.co/spaces/riteshu1/team-genesis-openenv-warehouse-rl
 
