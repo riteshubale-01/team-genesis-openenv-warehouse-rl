@@ -9,7 +9,6 @@ description = "Warehouse RL OpenEnv environment"
 authors = [{ name = "Ritesh Ubale" }]
 readme = "README.md"
 requires-python = ">=3.8"
-
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -19,3 +18,10 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.openenv]
+name = "WarehouseRL-v1"
+version = "1.0.0"
+entry = "inference.py"
+output_format = "openenv_v1"
+mode = "multi"
