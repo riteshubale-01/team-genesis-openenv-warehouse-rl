@@ -1,0 +1,103 @@
+# openenv.yaml — OpenEnv compliance configuration for Warehouse RL
+
+name: WarehouseRL-v1
+version: "1.0.0"
+description: >
+  Real-world warehouse robot decision-making under uncertainty.
+  Partial observability, dynamic obstacles, battery management,
+  and multi-priority task scheduling.
+
+environment:
+  type: http
+  base_url: http://localhost:7860
+  endpoints:
+    health:
+      method: GET
+      path: /health
+    reset:
+      method: POST
+      path: /reset
+      body:
+        seed: integer
+        difficulty: string
+    step:
+      method: POST
+      path: /step
+      body:
+        action: integer
+    state:
+      method: GET
+      path: /state
+
+action_space:
+  type: Discrete
+  n: 8
+  labels:
+    - MOVE_UP
+    - MOVE_DOWN
+    - MOVE_LEFT
+    - MOVE_RIGHT
+    - PICK
+    - DROP
+    - RECHARGE
+    - WAIT
+
+observation_space:
+  type: partial
+  description: Local grid (2*view_radius+1)^2 + scalar features
+  features:
+    - local_grid
+    - robot_pos
+    - battery
+    - carrying_item
+    - active_tasks
+
+difficulty_levels:
+  easy:
+    tasks: 1
+    obstacles: 0
+    view_radius: 4
+    max_steps: 150
+    battery_drain: 0.3
+  medium:
+    tasks: 3
+    obstacles: 1
+    view_radius: 3
+    max_steps: 200
+    battery_drain: 0.6
+  hard:
+    tasks: 2
+    obstacles: 3
+    view_radius: 2
+    max_steps: 250
+    battery_drain: 0.9
+
+grader:
+  type: deterministic
+  score_range: [0.0, 1.0]
+  components:
+    - name: task_completion
+      weight: 0.40
+    - name: efficiency
+      weight: 0.25
+    - name: safety
+      weight: 0.20
+    - name: battery_management
+      weight: 0.15
+
+inference:
+  script: inference.py
+  env_vars:
+    - API_BASE_URL
+    - MODEL_NAME
+    - HF_TOKEN
+  output_format: openenv_v1
+
+docker:
+  base_image: python:3.11-slim
+  port: 7860
+  entrypoint: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+
+huggingface_spaces:
+  sdk: docker
+  app_port: 7860

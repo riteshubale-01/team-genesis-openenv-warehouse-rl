@@ -1,0 +1,35 @@
+# Common virtual env names
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling / packaging
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Test and coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type/lint caches
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and temp
+*.tmp
+*.bak
+
+# Windows OS files
+Thumbs.db
+Desktop.ini

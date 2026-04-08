@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarehouseRL Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e1a1f;
+      --bg-soft: #13252d;
+      --panel: #182f39;
+      --panel-alt: #1f3b47;
+      --line: #2a4c5b;
+      --text: #dceff4;
+      --muted: #9ab7c2;
+      --accent: #2ec4b6;
+      --accent-2: #f4a261;
+      --good: #53d86a;
+      --bad: #ff6b6b;
+      --warn: #f9c74f;
+      --charger: #38bdf8;
+      --shelf: #64748b;
+      --target: #f4a261;
+      --task-pickup: #f59e0b;
+      --task-dropoff: #ef4444;
+      --robot: #2ec4b6;
+      --obstacle: #fb7185;
+      --empty: #0f2027;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1000px 600px at 10% -10%, #1d3f4b 0%, transparent 70%),
+        radial-gradient(700px 500px at 100% 0%, #5a3d2c 0%, transparent 65%),
+        linear-gradient(180deg, #0b1418 0%, #0e1a1f 50%, #111d23 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      width: min(1200px, 96vw);
+      margin: 24px auto;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(24, 47, 57, 0.95), rgba(17, 35, 43, 0.95));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: linear-gradient(120deg, rgba(25, 60, 72, 0.95), rgba(51, 39, 30, 0.95));
+    }
+
+    .title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .tag {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+      color: #0b1519;
+      background: var(--accent);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-weight: 600;
+    }
+
+    .controls {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    input, select, button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--bg-soft);
+      color: var(--text);
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.92rem;
+    }
+
+    button {
+      cursor: pointer;
+      transition: transform .15s ease, background .2s ease;
+      font-weight: 600;
+      background: linear-gradient(180deg, #2b505f, #223f4c);
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    .primary {
+      background: linear-gradient(180deg, #2ec4b6, #25a79c);
+      color: #06231f;
+      border-color: #20a99b;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .stat {
+      background: rgba(15, 32, 39, 0.75);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .stat .k {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .stat .v {
+      font-family: "IBM Plex Mono", monospace;
+      margin-top: 4px;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .meter {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: #203941;
+      border: 1px solid var(--line);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2ec4b6, #53d86a);
+      width: 0%;
+      transition: width .25s ease;
+    }
+
+    .grid-panel {
+      display: grid;
+      gap: 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 6px;
+      background: rgba(10, 20, 24, 0.6);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      min-height: 420px;
+    }
+
+    .cell {
+      aspect-ratio: 1;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.76rem;
+      font-family: "IBM Plex Mono", monospace;
+      color: #e7f7fb;
+      position: relative;
+    }
+
+    .cell small {
+      font-size: 0.62rem;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(13, 26, 32, 0.75);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .mono {
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .tasks {
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(11, 24, 29, 0.7);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    th {
+      color: var(--muted);
+      position: sticky;
+      top: 0;
+      background: #19313b;
+    }
+
+    .good { color: var(--good); }
+    .bad { color: var(--bad); }
+    .warn { color: var(--warn); }
+
+    #status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .chart {
+      width: 100%;
+      height: 120px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(10, 22, 27, 0.8);
+      padding: 8px;
+    }
+
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+      .grid { min-height: 340px; }
+      .actions { grid-template-columns: repeat(2, 1fr); }
+      .stats { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <div class="title">WarehouseRL Live Dashboard</div>
+        <div class="sub">Visual control panel for reset, step, state, rewards, and active tasks</div>
+      </div>
+      <div class="tag">OpenEnv UI</div>
+    </div>
+
+    <section class="panel controls">
+      <div class="row">
+        <div>
+          <label for="difficulty">Difficulty</label>
+          <select id="difficulty">
+            <option value="easy">easy</option>
+            <option value="medium">medium</option>
+            <option value="hard">hard</option>
+          </select>
+        </div>
+        <div>
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" value="42" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="resetBtn" class="primary">Reset Episode</button>
+        <button id="refreshBtn">Refresh State</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="autoMode">Auto Mode</label>
+          <select id="autoMode">
+            <option value="heuristic">planner (pathfinding)</option>
+            <option value="random">random</option>
+            <option value="sweep">sweep</option>
+          </select>
+        </div>
+        <div>
+          <label for="autoDelay">Auto Delay (ms)</label>
+          <input id="autoDelay" type="number" value="350" min="100" max="3000" step="50" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="autoStartBtn" class="primary">Start Auto</button>
+        <button id="autoStopBtn">Stop Auto</button>
+      </div>
+
+      <div class="actions" id="actionButtons"></div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="k">Step Count</div>
+          <div class="v" id="stepCount">0</div>
+        </div>
+        <div class="stat">
+          <div class="k">Total Reward</div>
+          <div class="v" id="totalReward">0.00</div>
+        </div>
+        <div class="stat">
+          <div class="k">Done</div>
+          <div class="v" id="doneFlag">false</div>
+        </div>
+      </div>
+
+      <div class="stat">
+        <div class="k">Battery</div>
+        <div class="v" id="batteryText">100.00%</div>
+        <div class="meter"><div class="fill" id="batteryFill"></div></div>
+      </div>
+
+      <canvas id="rewardChart" class="chart" width="600" height="120"></canvas>
+      <div id="status">Ready. Click Reset Episode to start.</div>
+    </section>
+
+    <section class="panel grid-panel">
+      <div class="legend" id="legend"></div>
+      <div class="grid" id="grid"></div>
+      <div class="tasks">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Pickup</th>
+              <th>Dropoff</th>
+              <th>Priority</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="taskBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const ACTIONS = [
+      { id: 0, name: "MOVE_UP" },
+      { id: 1, name: "MOVE_DOWN" },
+      { id: 2, name: "MOVE_LEFT" },
+      { id: 3, name: "MOVE_RIGHT" },
+      { id: 4, name: "PICK" },
+      { id: 5, name: "DROP" },
+      { id: 6, name: "RECHARGE" },
+      { id: 7, name: "WAIT" },
+    ];
+
+    const palette = {
+      empty: "var(--empty)",
+      shelf: "var(--shelf)",
+      charger: "var(--charger)",
+      target: "var(--target)",
+      pickup: "var(--task-pickup)",
+      dropoff: "var(--task-dropoff)",
+      robot: "var(--robot)",
+      obstacle: "var(--obstacle)",
+    };
+
+    let latestState = null;
+    let done = false;
+    let rewards = [];
+    let autoTimer = null;
+    let stepping = false;
+    let sweepIndex = 0;
+
+    const el = {
+      difficulty: document.getElementById("difficulty"),
+      seed: document.getElementById("seed"),
+      resetBtn: document.getElementById("resetBtn"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      autoMode: document.getElementById("autoMode"),
+      autoDelay: document.getElementById("autoDelay"),
+      autoStartBtn: document.getElementById("autoStartBtn"),
+      autoStopBtn: document.getElementById("autoStopBtn"),
+      actionButtons: document.getElementById("actionButtons"),
+      status: document.getElementById("status"),
+      grid: document.getElementById("grid"),
+      legend: document.getElementById("legend"),
+      taskBody: document.getElementById("taskBody"),
+      stepCount: document.getElementById("stepCount"),
+      totalReward: document.getElementById("totalReward"),
+      doneFlag: document.getElementById("doneFlag"),
+      batteryText: document.getElementById("batteryText"),
+      batteryFill: document.getElementById("batteryFill"),
+      rewardChart: document.getElementById("rewardChart"),
+    };
+
+    function setStatus(msg, tone = "info") {
+      el.status.className = tone === "bad" ? "bad" : tone === "good" ? "good" : "";
+      el.status.textContent = msg;
+    }
+
+    function chip(color, label) {
+      const node = document.createElement("div");
+      node.className = "chip";
+      node.innerHTML = `<span class="dot" style="background:${color}"></span>${label}`;
+      return node;
+    }
+
+    function buildLegend() {
+      const items = [
+        [palette.robot, "Robot"],
+        [palette.obstacle, "Obstacle"],
+        [palette.shelf, "Shelf"],
+        [palette.target, "Target"],
+        [palette.charger, "Charger"],
+        [palette.pickup, "Task Pickup"],
+        [palette.dropoff, "Task Dropoff"],
+      ];
+      el.legend.innerHTML = "";
+      items.forEach(([c, t]) => el.legend.appendChild(chip(c, t)));
+    }
+
+    function createActionButtons() {
+      ACTIONS.forEach(a => {
+        const b = document.createElement("button");
+        b.textContent = `${a.id}: ${a.name}`;
+        b.onclick = () => step(a.id);
+        el.actionButtons.appendChild(b);
+      });
+    }
+
+    function baseCellType(r, c) {
+      const isCharger = (r === 0 || r === 9) && (c === 0 || c === 9);
+      const isShelf = [2, 4, 6].includes(r) && c >= 2 && c <= 7;
+      const isTarget = (r === 1 || r === 8) && [2, 4, 6].includes(c);
+      if (isCharger) return { type: "charger", label: "C" };
+      if (isShelf) return { type: "shelf", label: "S" };
+      if (isTarget) return { type: "target", label: "T" };
+      return { type: "empty", label: "" };
+    }
+
+    function buildBoard(state) {
+      const board = Array.from({ length: 10 }, (_, r) =>
+        Array.from({ length: 10 }, (_, c) => baseCellType(r, c))
+      );
+
+      state.tasks.forEach(t => {
+        if (!t.completed && !t.picked_up) {
+          board[t.pickup_pos.row][t.pickup_pos.col] = { type: "pickup", label: `P${t.task_id}` };
+        }
+        if (!t.completed) {
+          board[t.dropoff_pos.row][t.dropoff_pos.col] = { type: "dropoff", label: `D${t.task_id}` };
+        }
+      });
+
+      state.obstacles.forEach(o => {
+        board[o.position.row][o.position.col] = { type: "obstacle", label: "H" };
+      });
+
+      board[state.robot_pos.row][state.robot_pos.col] = { type: "robot", label: "R" };
+      return board;
+    }
+
+    function inBounds(r, c) {
+      return r >= 0 && r < 10 && c >= 0 && c < 10;
+    }
+
+    function isShelf(r, c) {
+      return [2, 4, 6].includes(r) && c >= 2 && c <= 7;
+    }
+
+    function isBlocked(state, r, c) {
+      if (!inBounds(r, c)) return true;
+      if (isShelf(r, c)) return true;
+      return (state.obstacles || []).some(o => o.position.row === r && o.position.col === c);
+    }
+
+    function actionFromStep(from, to) {
+      const dr = to.r - from.r;
+      const dc = to.c - from.c;
+      if (dr === -1 && dc === 0) return 0;
+      if (dr === 1 && dc === 0) return 1;
+      if (dr === 0 && dc === -1) return 2;
+      if (dr === 0 && dc === 1) return 3;
+      return 7;
+    }
+
+    function bfsNextAction(state, start, goalTest) {
+      if (goalTest(start.r, start.c)) return 7;
+
+      const q = [start];
+      const key = (r, c) => `${r},${c}`;
+      const parent = new Map();
+      const visited = new Set([key(start.r, start.c)]);
+
+      while (q.length) {
+        const cur = q.shift();
+        const dirs = [
+          { r: cur.r - 1, c: cur.c },
+          { r: cur.r + 1, c: cur.c },
+          { r: cur.r, c: cur.c - 1 },
+          { r: cur.r, c: cur.c + 1 },
+        ];
+
+        for (const nx of dirs) {
+          const k = key(nx.r, nx.c);
+          if (visited.has(k) || isBlocked(state, nx.r, nx.c)) continue;
+          visited.add(k);
+          parent.set(k, cur);
+
+          if (goalTest(nx.r, nx.c)) {
+            let step = nx;
+            let prev = parent.get(key(step.r, step.c));
+            while (prev && !(prev.r === start.r && prev.c === start.c)) {
+              step = prev;
+              prev = parent.get(key(step.r, step.c));
+            }
+            return actionFromStep(start, step);
+          }
+          q.push(nx);
+        }
+      }
+      return 7;
+    }
+
+    function pickBestTask(state) {
+      const rr = state.robot_pos.row;
+      const rc = state.robot_pos.col;
+      const carrying = Boolean(state.carrying_item);
+      const tasks = (state.tasks || []).filter(t => !t.completed);
+
+      if (!tasks.length) return null;
+      if (carrying) {
+        return tasks.find(t => t.task_id === state.carrying_task_id) || tasks.find(t => t.picked_up) || null;
+      }
+
+      const candidates = tasks.filter(t => !t.picked_up);
+      if (!candidates.length) return null;
+
+      candidates.sort((a, b) => {
+        const da = Math.abs(a.pickup_pos.row - rr) + Math.abs(a.pickup_pos.col - rc) - a.priority * 0.25;
+        const db = Math.abs(b.pickup_pos.row - rr) + Math.abs(b.pickup_pos.col - rc) - b.priority * 0.25;
+        return da - db;
+      });
+      return candidates[0];
+    }
+
+    function chooseHeuristicAction(state) {
+      const start = { r: state.robot_pos.row, c: state.robot_pos.col };
+      const battery = Number(state.battery || 100);
+      const carrying = Boolean(state.carrying_item);
+      const onCharger = (start.r === 0 || start.r === 9) && (start.c === 0 || start.c === 9);
+
+      // If robot decided to charge and is already on a charger, keep charging to full.
+      if (onCharger && battery < 100) {
+        return 6;
+      }
+
+      if (battery < 20) {
+        const chargers = [{ r: 0, c: 0 }, { r: 0, c: 9 }, { r: 9, c: 0 }, { r: 9, c: 9 }];
+        if (onCharger) return 6;
+
+        return bfsNextAction(state, start, (r, c) =>
+          chargers.some(p => p.r === r && p.c === c)
+        );
+      }
+
+      const task = pickBestTask(state);
+      if (!task) return 7;
+
+      if (carrying) {
+        const drop = task.dropoff_pos;
+        const dist = Math.abs(drop.row - start.r) + Math.abs(drop.col - start.c);
+        if (dist <= 1) return 5;
+        return bfsNextAction(state, start, (r, c) => {
+          const d = Math.abs(drop.row - r) + Math.abs(drop.col - c);
+          return d <= 1;
+        });
+      }
+
+      const pick = task.pickup_pos;
+      const dist = Math.abs(pick.row - start.r) + Math.abs(pick.col - start.c);
+      if (dist <= 1) return 4;
+      return bfsNextAction(state, start, (r, c) => {
+        const d = Math.abs(pick.row - r) + Math.abs(pick.col - c);
+        return d <= 1;
+      });
+    }
+
+    function chooseAutoAction() {
+      const mode = el.autoMode.value;
+      if (!latestState) return 7;
+
+      if (mode === "random") {
+        return Math.floor(Math.random() * 8);
+      }
+      if (mode === "sweep") {
+        const seq = [3, 3, 3, 1, 1, 1, 2, 2, 2, 0, 0, 0, 7];
+        const action = seq[sweepIndex % seq.length];
+        sweepIndex += 1;
+        return action;
+      }
+      return chooseHeuristicAction(latestState);
+    }
+
+    function stopAuto(msg = "Auto mode stopped.") {
+      if (autoTimer) {
+        clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+      setStatus(msg, "warn");
+    }
+
+    async function autoTick() {
+      if (done) {
+        stopAuto("Episode completed. Auto mode stopped.");
+        return;
+      }
+      const action = chooseAutoAction();
+      await step(action);
+      if (!done && autoTimer) {
+        const delay = Math.max(100, Number(el.autoDelay.value || 350));
+        autoTimer = setTimeout(autoTick, delay);
+      }
+    }
+
+    function startAuto() {
+      if (autoTimer) return;
+      const delay = Math.max(100, Number(el.autoDelay.value || 350));
+      setStatus(`Auto mode started (${el.autoMode.value}, ${delay}ms).`, "good");
+      autoTimer = setTimeout(autoTick, 0);
+    }
+
+    function renderGrid(state) {
+      const board = buildBoard(state);
+      el.grid.innerHTML = "";
+      board.flat().forEach(cell => {
+        const div = document.createElement("div");
+        div.className = "cell";
+        div.style.background = palette[cell.type] || palette.empty;
+        div.innerHTML = cell.label ? `<small>${cell.label}</small>` : "";
+        el.grid.appendChild(div);
+      });
+    }
+
+    function renderTasks(tasks) {
+      el.taskBody.innerHTML = "";
+      tasks.forEach(t => {
+        const tr = document.createElement("tr");
+        let status = "active";
+        if (t.completed) status = "completed";
+        else if (t.picked_up) status = "picked";
+        tr.innerHTML = `
+          <td class="mono">${t.task_id}</td>
+          <td class="mono">(${t.pickup_pos.row},${t.pickup_pos.col})</td>
+          <td class="mono">(${t.dropoff_pos.row},${t.dropoff_pos.col})</td>
+          <td class="mono">${t.priority}</td>
+          <td class="${status === "completed" ? "good" : status === "picked" ? "warn" : ""}">${status}</td>
+        `;
+        el.taskBody.appendChild(tr);
+      });
+    }
+
+    function renderChart() {
+      const c = el.rewardChart;
+      const ctx = c.getContext("2d");
+      const w = c.width;
+      const h = c.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = "#315767";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      if (rewards.length < 2) return;
+
+      const min = Math.min(...rewards, -1);
+      const max = Math.max(...rewards, 1);
+      const span = Math.max(0.01, max - min);
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#2ec4b6";
+      ctx.beginPath();
+      rewards.forEach((r, i) => {
+        const x = (i / Math.max(1, rewards.length - 1)) * (w - 12) + 6;
+        const y = h - ((r - min) / span) * (h - 12) - 6;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    async function callApi(path, method = "GET", body = null) {
+      const res = await fetch(path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : null,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    function updateStats(state, info = {}) {
+      el.stepCount.textContent = String(state.step_count ?? info.step_count ?? 0);
+      el.totalReward.textContent = (info.total_reward ?? state.total_reward ?? 0).toFixed(2);
+      el.doneFlag.textContent = String(state.done ?? done);
+      el.batteryText.textContent = `${Number(state.battery ?? 0).toFixed(2)}%`;
+      el.batteryFill.style.width = `${Math.max(0, Math.min(100, Number(state.battery ?? 0)))}%`;
+      el.batteryFill.style.background = Number(state.battery ?? 0) < 20 ? "linear-gradient(90deg, #ff6b6b, #f4a261)" : "linear-gradient(90deg, #2ec4b6, #53d86a)";
+    }
+
+    async function refreshState() {
+      try {
+        latestState = await callApi("/state");
+        renderGrid(latestState);
+        renderTasks(latestState.tasks || []);
+        updateStats(latestState, latestState);
+        setStatus("State refreshed.", "good");
+      } catch (err) {
+        setStatus(`Refresh failed: ${err.message}`, "bad");
+      }
+    }
+
+    async function reset() {
+      const seed = Number(el.seed.value || 42);
+      const difficulty = el.difficulty.value;
+      rewards = [];
+      done = false;
+      sweepIndex = 0;
+      stopAuto("Auto mode reset.");
+      renderChart();
+
+      try {
+        await callApi("/reset", "POST", { seed, difficulty });
+        await refreshState();
+        setStatus(`Episode reset. difficulty=${difficulty}, seed=${seed}`, "good");
+      } catch (err) {
+        setStatus(`Reset failed: ${err.message}`, "bad");
+      }
+    }
+
+    async function step(action) {
+      if (stepping) return;
+      if (done) {
+        setStatus("Episode already done. Click Reset Episode.", "bad");
+        return;
+      }
+      stepping = true;
+      try {
+        const data = await callApi("/step", "POST", { action });
+        rewards.push(Number(data.reward || 0));
+        renderChart();
+        done = Boolean(data.done);
+
+        latestState = await callApi("/state");
+        renderGrid(latestState);
+        renderTasks(latestState.tasks || []);
+        updateStats(latestState, data.info || {});
+
+        const reason = data.info?.reason ? ` | reason=${data.info.reason}` : "";
+        setStatus(`Action=${ACTIONS[action].name} | reward=${Number(data.reward).toFixed(2)} | done=${done}${reason}`);
+      } catch (err) {
+        setStatus(`Step failed: ${err.message}`, "bad");
+      } finally {
+        stepping = false;
+      }
+    }
+
+    el.resetBtn.onclick = reset;
+    el.refreshBtn.onclick = refreshState;
+    el.autoStartBtn.onclick = startAuto;
+    el.autoStopBtn.onclick = () => stopAuto();
+
+    document.addEventListener("keydown", (event) => {
+      const tag = (event.target && event.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "select" || tag === "textarea") return;
+
+      const key = event.key;
+      const map = {
+        ArrowUp: 0,
+        ArrowDown: 1,
+        ArrowLeft: 2,
+        ArrowRight: 3,
+        p: 4,
+        P: 4,
+        d: 5,
+        D: 5,
+        r: 6,
+        R: 6,
+        " ": 7,
+      };
+
+      if (Object.prototype.hasOwnProperty.call(map, key)) {
+        event.preventDefault();
+        step(map[key]);
+      }
+    });
+
+    createActionButtons();
+    buildLegend();
+    refreshState();
+  </script>
+</body>
+</html>
