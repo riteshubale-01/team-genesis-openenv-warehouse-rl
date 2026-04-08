@@ -1,3 +1,13 @@
+---
+title: Team Genesis Openenv Warehouse Rl
+emoji: 🌖
+colorFrom: gray
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+---
+
 ## 🌐 Live Demo
 https://huggingface.co/spaces/riteshu1/team-genesis-openenv-warehouse-rl
 
