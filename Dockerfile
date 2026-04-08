@@ -13,12 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
-COPY app.py .
-COPY environment.py .
-COPY models.py .
-COPY grader.py .
-COPY inference.py .
-COPY openenv.yaml .
+COPY . .
 
 # HF Spaces: port 7860
 EXPOSE 7860
