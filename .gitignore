@@ -3,7 +3,9 @@
 venv/
 env/
 ENV/
-
+__pycache__/
+*.pyc
+mnt/
 # Python tooling / packaging
 *.egg-info/
 .eggs/
