@@ -17,11 +17,5 @@ dependencies = [
     "numpy"
 ]
 
-[tool.setuptools]
-py-modules = [
-    "environment",
-    "grader",
-    "models",
-    "inference",
-    "app"
-]
+[tool.setuptools.packages.find]
+where = ["."]
