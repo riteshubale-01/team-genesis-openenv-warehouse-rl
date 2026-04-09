@@ -1,7 +1,7 @@
 """
 grader.py — Deterministic scoring for Warehouse OpenEnv.
 
-Score is in [0, 1] based on:
+Score is in (0, 1) based on:
   - Task completion ratio       (40%)
   - Step efficiency             (25%)
   - Safety (collision avoidance) (20%)
@@ -15,8 +15,9 @@ from typing import Dict, Any, List
 SCORE_EPSILON = 1e-4
 
 
-def to_open_unit_interval(score: float) -> float:
-    """Return a score strictly inside (0, 1)."""
+def open_score(value: float) -> float:
+    """Round score then clamp it to a strict open interval (0, 1)."""
+    score = round(float(value), 4)
     if score <= 0.0:
         return SCORE_EPSILON
     if score >= 1.0:
@@ -26,7 +27,7 @@ def to_open_unit_interval(score: float) -> float:
 
 def score_field(value: float) -> float:
     """Normalize any score-like field to be strictly between 0 and 1."""
-    return round(to_open_unit_interval(float(value)), 4)
+    return open_score(value)
 
 
 def compute_score(
@@ -40,7 +41,7 @@ def compute_score(
     difficulty: str,
 ) -> Dict[str, Any]:
     """
-    Compute a deterministic score in [0, 1].
+    Compute a deterministic score in (0, 1).
 
     Parameters
     ----------
@@ -55,7 +56,7 @@ def compute_score(
 
     Returns
     -------
-    dict with 'score' (float 0-1) and component breakdown
+    dict with 'score' (float strictly between 0 and 1) and component breakdown
     """
     # ── Task completion (40%) ──────────────────────
     if total_tasks_spawned == 0:
@@ -94,9 +95,7 @@ def compute_score(
     diff_mult = {"easy": 1.0, "medium": 1.1, "hard": 1.2}[difficulty]
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
-    final_score = round(to_open_unit_interval(total_raw * diff_mult), 4)
-
-    normalized_score = score_field(final_score)
+    normalized_score = score_field(total_raw * diff_mult)
 
     return {
         "score": normalized_score,

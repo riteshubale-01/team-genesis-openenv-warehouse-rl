@@ -115,8 +115,9 @@ def parse_action(raw: str) -> int:
     return 7  # WAIT as fallback
 
 
-def to_open_unit_interval(score: float) -> float:
-    """Clamp score to the strict open interval (0, 1)."""
+def open_score(value: float) -> float:
+    """Round score then clamp it to a strict open interval (0, 1)."""
+    score = round(float(value), 4)
     if score <= 0.0:
         return SCORE_EPSILON
     if score >= 1.0:
@@ -346,7 +347,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
-    normalized_score = round(to_open_unit_interval(raw_score), 4)
+    normalized_score = open_score(raw_score)
 
     return {
         "difficulty": difficulty,
@@ -365,7 +366,8 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> None:
     for difficulty in difficulties:
         results.append(run_episode(client=client, difficulty=difficulty, seed=seed))
 
-    aggregate_score = round(sum(r["score"] for r in results) / max(1, len(results)), 4)
+    aggregate_raw = sum(r["score"] for r in results) / max(1, len(results))
+    aggregate_score = open_score(aggregate_raw)
     payload = {
         "benchmark": BENCHMARK,
         "model": MODEL_NAME,
