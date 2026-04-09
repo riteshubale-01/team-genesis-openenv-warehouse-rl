@@ -363,8 +363,12 @@
           <div class="v" id="stepCount">0</div>
         </div>
         <div class="stat">
+          <div class="k">Step Reward</div>
+          <div class="v" id="stepReward">0.0000</div>
+        </div>
+        <div class="stat">
           <div class="k">Total Reward</div>
-          <div class="v" id="totalReward">0.00</div>
+          <div class="v" id="totalReward">0.0000</div>
         </div>
         <div class="stat">
           <div class="k">Done</div>
@@ -448,6 +452,7 @@
       taskBody: document.getElementById("taskBody"),
       stepCount: document.getElementById("stepCount"),
       totalReward: document.getElementById("totalReward"),
+      stepReward: document.getElementById("stepReward"),
       doneFlag: document.getElementById("doneFlag"),
       batteryText: document.getElementById("batteryText"),
       batteryFill: document.getElementById("batteryFill"),
@@ -768,7 +773,8 @@
 
     function updateStats(state, info = {}) {
       el.stepCount.textContent = String(state.step_count ?? info.step_count ?? 0);
-      el.totalReward.textContent = (info.total_reward ?? state.total_reward ?? 0).toFixed(2);
+      el.stepReward.textContent = (info.step_reward ?? 0).toFixed(4);
+      el.totalReward.textContent = (info.total_reward ?? state.total_reward ?? 0).toFixed(4);
       el.doneFlag.textContent = String(state.done ?? done);
       el.batteryText.textContent = `${Number(state.battery ?? 0).toFixed(2)}%`;
       el.batteryFill.style.width = `${Math.max(0, Math.min(100, Number(state.battery ?? 0)))}%`;
@@ -824,7 +830,8 @@
         updateStats(latestState, data.info || {});
 
         const reason = data.info?.reason ? ` | reason=${data.info.reason}` : "";
-        setStatus(`Action=${ACTIONS[action].name} | reward=${Number(data.reward).toFixed(2)} | done=${done}${reason}`);
+        const picked = data.info?.picked_up_item ? " | picked=true" : "";
+        setStatus(`Action=${ACTIONS[action].name} | reward=${Number(data.reward).toFixed(4)} | done=${done}${picked}${reason}`);
       } catch (err) {
         setStatus(`Step failed: ${err.message}`, "bad");
       } finally {
