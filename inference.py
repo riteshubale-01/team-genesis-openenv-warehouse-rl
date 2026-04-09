@@ -356,7 +356,8 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         "score": normalized_score,
         "task_score": normalized_score,
         "success": success,
-        "total_reward": round(sum(rewards), 4),
+        "total_reward": open_score(sum(rewards) / max(1, len(rewards))),
+        "total_reward_raw": round(sum(rewards), 4),
     }
 
 
