@@ -359,8 +359,8 @@
 
       <div class="stats">
         <div class="stat">
-          <div class="k">Step Reward</div>
-          <div class="v" id="stepReward">0.0000</div>
+          <div class="k">Step Count</div>
+          <div class="v" id="stepCount">0</div>
         </div>
         <div class="stat">
           <div class="k">Total Reward</div>
@@ -446,8 +446,8 @@
       grid: document.getElementById("grid"),
       legend: document.getElementById("legend"),
       taskBody: document.getElementById("taskBody"),
+      stepCount: document.getElementById("stepCount"),
       totalReward: document.getElementById("totalReward"),
-      stepReward: document.getElementById("stepReward"),
       doneFlag: document.getElementById("doneFlag"),
       batteryText: document.getElementById("batteryText"),
       batteryFill: document.getElementById("batteryFill"),
@@ -761,7 +761,7 @@
     }
 
     function updateStats(state, info = {}) {
-      el.stepReward.textContent = (info.step_reward ?? 0).toFixed(4);
+      el.stepCount.textContent = String(state.step_count ?? info.step_count ?? 0);
       el.totalReward.textContent = (info.total_reward ?? state.total_reward ?? 0).toFixed(4);
       el.doneFlag.textContent = String(state.done ?? done);
       el.batteryText.textContent = `${Number(state.battery ?? 0).toFixed(2)}%`;
