@@ -12,6 +12,18 @@ from __future__ import annotations
 from typing import Dict, Any, List
 
 
+SCORE_EPSILON = 1e-4
+
+
+def to_open_unit_interval(score: float) -> float:
+    """Return a score strictly inside (0, 1)."""
+    if score <= 0.0:
+        return SCORE_EPSILON
+    if score >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return score
+
+
 def compute_score(
     completed_tasks: int,
     total_tasks_spawned: int,
@@ -77,7 +89,7 @@ def compute_score(
     diff_mult = {"easy": 1.0, "medium": 1.1, "hard": 1.2}[difficulty]
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
-    final_score = min(1.0, round(total_raw * diff_mult, 4))
+    final_score = round(to_open_unit_interval(total_raw * diff_mult), 4)
 
     return {
         "score": final_score,
