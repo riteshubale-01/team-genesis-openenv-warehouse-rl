@@ -51,10 +51,13 @@ R_INVALID_ACTION   = -0.3
 R_PRIORITY_2       = 5.0    # bonus for high-priority task
 R_PRIORITY_3       = 10.0   # bonus for urgent task
 R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
+R_PROGRESS_TOWARD  = 0.2    # move closer to active objective
+R_PROGRESS_AWAY    = -0.2   # move farther from active objective
+REWARD_EPSILON     = 1e-4
 
 # The raw step reward is mapped to [0, 1] for API-visible reward outputs.
-RAW_REWARD_MIN = R_STEP_PENALTY + R_BATTERY_LOW + R_DEAD_BATTERY + R_COLLISION + R_INVALID_ACTION
-RAW_REWARD_MAX = R_STEP_PENALTY + R_TASK_COMPLETE + R_PRIORITY_3 + R_EFFICIENCY_BONUS
+RAW_REWARD_MIN = R_STEP_PENALTY + R_BATTERY_LOW + R_DEAD_BATTERY + R_COLLISION + R_INVALID_ACTION + R_PROGRESS_AWAY
+RAW_REWARD_MAX = R_STEP_PENALTY + R_TASK_COMPLETE + R_PRIORITY_3 + R_EFFICIENCY_BONUS + R_PROGRESS_TOWARD
 
 
 # ─────────────────────────────────────────
@@ -154,6 +157,7 @@ class WarehouseEnvironment:
             info_obj.action_valid = False
 
         action = ActionType(action_int)
+        pre_distance = self._active_objective_distance()
 
         # Execute action
         if action in (ActionType.MOVE_UP, ActionType.MOVE_DOWN,
@@ -167,6 +171,8 @@ class WarehouseEnvironment:
             self._execute_recharge(reward_obj, info_obj)
         elif action == ActionType.WAIT:
             pass  # no-op
+
+        self._apply_progress_shaping(pre_distance, reward_obj)
 
         # Battery drain (except during recharge which adds battery)
         if action != ActionType.RECHARGE:
@@ -222,11 +228,41 @@ class WarehouseEnvironment:
         return self.get_observation(), round(step_reward, 4), self._done, info_dict
 
     def _normalize_reward(self, raw_reward: float) -> float:
-        """Scale raw reward to [0, 1] for external API compatibility."""
+        """Scale raw reward to strict (0, 1) for external API compatibility."""
         if RAW_REWARD_MAX <= RAW_REWARD_MIN:
-            return 0.0
+            return REWARD_EPSILON
         normalized = (raw_reward - RAW_REWARD_MIN) / (RAW_REWARD_MAX - RAW_REWARD_MIN)
-        return max(0.0, min(1.0, normalized))
+        return max(REWARD_EPSILON, min(1.0 - REWARD_EPSILON, normalized))
+
+    def _active_objective_distance(self) -> Optional[int]:
+        """Distance from robot to the current objective (pickup or dropoff)."""
+        rr, rc = self._robot_pos
+
+        if self._carrying_item and self._carrying_task_id is not None:
+            task = next((t for t in self._tasks if t.task_id == self._carrying_task_id), None)
+            if task is not None and not task.completed:
+                return manhattan((rr, rc), (task.dropoff_pos.row, task.dropoff_pos.col))
+
+        pickup_distances: List[int] = []
+        for task in self._tasks:
+            if task.completed or task.picked_up:
+                continue
+            pickup_distances.append(manhattan((rr, rc), (task.pickup_pos.row, task.pickup_pos.col)))
+        if pickup_distances:
+            return min(pickup_distances)
+        return None
+
+    def _apply_progress_shaping(self, pre_distance: Optional[int], reward: StepReward) -> None:
+        """Reward progress toward objective and penalize moving away."""
+        post_distance = self._active_objective_distance()
+        if pre_distance is None or post_distance is None:
+            return
+        if post_distance < pre_distance:
+            reward.progress_shaping += R_PROGRESS_TOWARD
+            reward.total += R_PROGRESS_TOWARD
+        elif post_distance > pre_distance:
+            reward.progress_shaping += R_PROGRESS_AWAY
+            reward.total += R_PROGRESS_AWAY
 
     def get_observation(self) -> PartialObservation:
         """Return partial observation centered on robot."""

@@ -106,6 +106,7 @@ class Action(BaseModel):
 class StepReward(BaseModel):
     total: float = Field(..., description="Total step reward")
     task_completion: float = Field(default=0.0)
+    progress_shaping: float = Field(default=0.0)
     step_penalty: float = Field(default=0.0)
     collision_penalty: float = Field(default=0.0)
     battery_penalty: float = Field(default=0.0)

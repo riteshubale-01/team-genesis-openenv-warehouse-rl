@@ -69,6 +69,7 @@ class TestEnvironmentStep:
         assert isinstance(done, bool)
         assert isinstance(info, dict)
         assert "step_count" in info
+        assert 0.0 < reward < 1.0
 
     def test_step_penalty_applied(self):
         _, reward, _, _ = self.env.step(7)  # WAIT
@@ -144,6 +145,17 @@ class TestActions:
         _, reward, _, info = env.step(6)  # RECHARGE
         # Should be invalid action
         assert 0.0 <= reward <= 1.0
+
+    def test_move_toward_pickup_rewards_more_than_wait(self):
+        env_wait = WarehouseEnvironment()
+        env_wait.reset(seed=42, difficulty="easy")
+        _, wait_reward, _, _ = env_wait.step(7)  # WAIT
+
+        env_move = WarehouseEnvironment()
+        env_move.reset(seed=42, difficulty="easy")
+        _, move_reward, _, _ = env_move.step(3)  # MOVE_RIGHT
+
+        assert move_reward > wait_reward
 
 
 class TestPartialObservability:
