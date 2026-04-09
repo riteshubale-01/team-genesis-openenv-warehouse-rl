@@ -36,6 +36,7 @@ from warehouse_env.models import (
 GRID_SIZE = 10          # 10x10 grid
 VIEW_RADIUS_MAP = {"easy": 4, "medium": 3, "hard": 2}
 MAX_STEPS_MAP   = {"easy": 150, "medium": 200, "hard": 250}
+MAX_TOTAL_TASKS = {"easy": 1, "medium": 6, "hard": 8}
 BATTERY_DRAIN   = {"easy": 0.3, "medium": 0.6, "hard": 0.9}   # % per step
 BATTERY_MAX     = 100.0
 RECHARGE_RATE   = 20.0   # % per recharge action
@@ -218,8 +219,8 @@ class WarehouseEnvironment:
             if not info_obj.reason:
                 info_obj.reason = "max_steps_reached"
 
-        # Check all tasks done (easy mode termination)
-        if self._difficulty == "easy" and self._all_tasks_done():
+        # End the episode once all spawned tasks are completed across all modes.
+        if self._all_tasks_done() and not self._carrying_item:
             self._done = True
             if not info_obj.reason:
                 info_obj.reason = "all_tasks_completed"
@@ -625,6 +626,8 @@ class WarehouseEnvironment:
     def _maybe_spawn_task(self) -> Optional[Task]:
         """Randomly spawn a new task in medium/hard."""
         if self._difficulty == "easy":
+            return None
+        if self._total_tasks_spawned >= MAX_TOTAL_TASKS[self._difficulty]:
             return None
         # Spawn probability: 5% per step in medium, 10% in hard
         prob = {"medium": 0.05, "hard": 0.10}.get(self._difficulty, 0.0)
