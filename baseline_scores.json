@@ -8,10 +8,10 @@
       "difficulty": "easy",
       "seed": 42,
       "steps": 0,
-      "score": 0.0,
+      "score": 0.0001,
       "success": false,
       "total_reward": 0
     }
   ],
-  "aggregate_score": 0.0
+  "aggregate_score": 0.0001
 }

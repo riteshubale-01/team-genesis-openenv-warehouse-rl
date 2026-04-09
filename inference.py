@@ -34,6 +34,7 @@ SERVER_URL: str = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 DIFFICULTY: str = os.environ.get("DIFFICULTY", "easy")
 SEED: int       = int(os.environ.get("SEED", "42"))
 MAX_RETRIES: int = 3
+SCORE_EPSILON: float = 1e-4
 
 TASK_NAME  = "warehouse_delivery"
 BENCHMARK  = "WarehouseRL-v1"
@@ -112,6 +113,15 @@ def parse_action(raw: str) -> int:
         if ch.isdigit() and 0 <= int(ch) <= 7:
             return int(ch)
     return 7  # WAIT as fallback
+
+
+def to_open_unit_interval(score: float) -> float:
+    """Clamp score to the strict open interval (0, 1)."""
+    if score <= 0.0:
+        return SCORE_EPSILON
+    if score >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return score
 
 
 # ─────────────────────────────────────────
@@ -264,6 +274,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
     step_infos: List[Dict[str, Any]] = []
     step_n = 0
     success = False
+    raw_score = 0.0
     use_heuristic_fallback = client is None
 
     try:
@@ -321,13 +332,13 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
 
         if step_infos:
             graded = score_episode(step_infos, difficulty=difficulty)
-            score = float(graded["score"])
-            success = score > 0.0
+            raw_score = float(graded["score"])
+            success = raw_score > 0.0
         else:
-            score = 0.0
+            raw_score = 0.0
 
     except Exception:
-        score = 0.0
+        raw_score = 0.0
     finally:
         rewards_str = ",".join(f"{r:.2f}" for r in rewards)
         print(
@@ -339,7 +350,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         "difficulty": difficulty,
         "seed": seed,
         "steps": step_n,
-        "score": round(score, 4),
+        "score": round(to_open_unit_interval(raw_score), 4),
         "success": success,
         "total_reward": round(sum(rewards), 4),
     }
