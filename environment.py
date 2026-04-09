@@ -55,6 +55,7 @@ R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
 R_PROGRESS_TOWARD  = 0.1    # move closer to active objective
 R_PROGRESS_AWAY    = -0.1   # move farther from active objective
 REWARD_EPSILON     = 1e-4
+CARRY_STEP_DECAY   = 0.0005
 
 RAW_STEP_SCALE = 2.5
 RAW_TOTAL_SCALE = 120.0
@@ -229,7 +230,10 @@ class WarehouseEnvironment:
         step_reward = self._normalize_step_reward(step_reward_raw)
         max_steps = MAX_STEPS_MAP[self._difficulty]
         step_reward_scaled = step_reward / max_steps
-        self._total_reward += step_reward_scaled
+        if self._carrying_item:
+            self._total_reward -= CARRY_STEP_DECAY
+        else:
+            self._total_reward += step_reward_scaled
         self._total_reward_raw += step_reward_raw
         total_reward_norm = min(0.9999, max(0.0001, self._total_reward))
 
@@ -239,6 +243,7 @@ class WarehouseEnvironment:
         info_dict["reward_breakdown"] = reward_obj.model_dump()
         info_dict["step_reward"] = round(step_reward, 4)
         info_dict["step_reward_scaled"] = round(step_reward_scaled, 6)
+        info_dict["carry_decay"] = CARRY_STEP_DECAY if self._carrying_item else 0.0
         info_dict["reward_raw"] = round(step_reward_raw, 4)
         info_dict["total_reward"] = round(total_reward_norm, 4)
         info_dict["total_reward_raw"] = round(self._total_reward_raw, 4)
