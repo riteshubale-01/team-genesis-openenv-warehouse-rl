@@ -225,10 +225,10 @@ class WarehouseEnvironment:
                 info_obj.reason = "all_tasks_completed"
 
         step_reward_raw = reward_obj.total
-        self._total_reward += step_reward_raw
-        self._total_reward_raw = self._total_reward
         step_reward = self._normalize_step_reward(step_reward_raw)
-        total_reward_norm = self._normalize_total_reward(self._total_reward)
+        self._total_reward += step_reward
+        self._total_reward_raw += step_reward_raw
+        total_reward_norm = self._total_reward
 
         print(f"step_reward={step_reward:.4f}, total_reward={total_reward_norm:.4f}")
 
@@ -237,7 +237,7 @@ class WarehouseEnvironment:
         info_dict["step_reward"] = round(step_reward, 4)
         info_dict["reward_raw"] = round(step_reward_raw, 4)
         info_dict["total_reward"] = round(total_reward_norm, 4)
-        info_dict["total_reward_raw"] = round(self._total_reward, 4)
+        info_dict["total_reward_raw"] = round(self._total_reward_raw, 4)
         info_dict["step_count"] = self._step_count
         info_dict["battery"] = round(self._battery, 2)
         info_dict["completed_tasks"] = self._completed_tasks
@@ -345,7 +345,7 @@ class WarehouseEnvironment:
             max_steps=MAX_STEPS_MAP[self._difficulty],
             done=self._done,
             seed=self._seed,
-            total_reward=round(self._normalize_total_reward(self._total_reward), 4),
+            total_reward=round(self._total_reward, 4),
             completed_tasks=self._completed_tasks,
             total_tasks_spawned=self._total_tasks_spawned,
         )
