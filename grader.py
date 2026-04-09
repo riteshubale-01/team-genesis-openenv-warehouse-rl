@@ -96,8 +96,11 @@ def compute_score(
     total_raw = completion_score + efficiency_score + safety_score + battery_score
     final_score = round(to_open_unit_interval(total_raw * diff_mult), 4)
 
+    normalized_score = score_field(final_score)
+
     return {
-        "score": score_field(final_score),
+        "score": normalized_score,
+        "task_score": normalized_score,
         "components": {
             "completion_ratio": round(completion_ratio, 4),
             "completion_score": score_field(completion_score),

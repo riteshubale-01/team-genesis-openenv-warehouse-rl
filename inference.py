@@ -346,11 +346,14 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
+    normalized_score = round(to_open_unit_interval(raw_score), 4)
+
     return {
         "difficulty": difficulty,
         "seed": seed,
         "steps": step_n,
-        "score": round(to_open_unit_interval(raw_score), 4),
+        "score": normalized_score,
+        "task_score": normalized_score,
         "success": success,
         "total_reward": round(sum(rewards), 4),
     }
