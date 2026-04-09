@@ -74,7 +74,7 @@ difficulty_levels:
 
 grader:
   type: deterministic
-  score_range: [0.0, 1.0]
+  score_range: [0.0001, 0.9999]
   components:
     - name: task_completion
       weight: 0.40

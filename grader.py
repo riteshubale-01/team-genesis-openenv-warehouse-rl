@@ -24,6 +24,11 @@ def to_open_unit_interval(score: float) -> float:
     return score
 
 
+def score_field(value: float) -> float:
+    """Normalize any score-like field to be strictly between 0 and 1."""
+    return round(to_open_unit_interval(float(value)), 4)
+
+
 def compute_score(
     completed_tasks: int,
     total_tasks_spawned: int,
@@ -92,18 +97,18 @@ def compute_score(
     final_score = round(to_open_unit_interval(total_raw * diff_mult), 4)
 
     return {
-        "score": final_score,
+        "score": score_field(final_score),
         "components": {
             "completion_ratio": round(completion_ratio, 4),
-            "completion_score": round(completion_score, 4),
+            "completion_score": score_field(completion_score),
             "efficiency": round(efficiency, 4),
-            "efficiency_score": round(efficiency_score, 4),
-            "safety_score_raw": round(safety_score_raw, 4),
-            "safety_score": round(safety_score, 4),
-            "battery_score_raw": round(battery_score_raw, 4),
-            "battery_score": round(battery_score, 4),
+            "efficiency_score": score_field(efficiency_score),
+            "safety_score_raw": score_field(safety_score_raw),
+            "safety_score": score_field(safety_score),
+            "battery_score_raw": score_field(battery_score_raw),
+            "battery_score": score_field(battery_score),
             "difficulty_multiplier": diff_mult,
-            "raw_total": round(total_raw, 4),
+            "raw_total": score_field(total_raw),
         },
         "metadata": {
             "completed_tasks": completed_tasks,
