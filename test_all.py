@@ -157,6 +157,41 @@ class TestActions:
 
         assert move_reward > wait_reward
 
+    def test_successful_pickup_gives_higher_reward_signal(self):
+        env = WarehouseEnvironment()
+        obs = env.reset(seed=42, difficulty="easy")
+
+        # Move robot near the first pickup location.
+        task = obs.active_tasks[0]
+        pickup_r = task.pickup_pos.row
+        pickup_c = task.pickup_pos.col
+        target_r = min(9, pickup_r + 1)
+        target_c = pickup_c
+
+        def move_toward(curr_r: int, curr_c: int) -> int:
+            if curr_r < target_r:
+                return 1  # MOVE_DOWN
+            if curr_r > target_r:
+                return 0  # MOVE_UP
+            if curr_c < target_c:
+                return 3  # MOVE_RIGHT
+            if curr_c > target_c:
+                return 2  # MOVE_LEFT
+            return 7  # WAIT
+
+        # Navigate to an accessible cell adjacent to the pickup shelf.
+        for _ in range(80):
+            curr = env.get_observation().robot_pos
+            if curr.row == target_r and curr.col == target_c:
+                break
+            env.step(move_toward(curr.row, curr.col))
+
+        _, pickup_reward, _, pickup_info = env.step(4)  # PICK
+        _, wait_reward, _, _ = env.step(7)              # WAIT baseline next step
+
+        assert pickup_info.get("picked_up_item", False)
+        assert pickup_reward > wait_reward
+
 
 class TestPartialObservability:
     def test_local_grid_correct_size(self):

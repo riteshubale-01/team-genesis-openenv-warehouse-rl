@@ -51,13 +51,13 @@ R_INVALID_ACTION   = -0.3
 R_PRIORITY_2       = 5.0    # bonus for high-priority task
 R_PRIORITY_3       = 10.0   # bonus for urgent task
 R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
-R_PROGRESS_TOWARD  = 0.2    # move closer to active objective
-R_PROGRESS_AWAY    = -0.2   # move farther from active objective
+R_PROGRESS_TOWARD  = 0.5    # move closer to active objective
+R_PROGRESS_AWAY    = -0.5   # move farther from active objective
 REWARD_EPSILON     = 1e-4
 
-# The raw step reward is mapped to [0, 1] for API-visible reward outputs.
-RAW_REWARD_MIN = R_STEP_PENALTY + R_BATTERY_LOW + R_DEAD_BATTERY + R_COLLISION + R_INVALID_ACTION + R_PROGRESS_AWAY
-RAW_REWARD_MAX = R_STEP_PENALTY + R_TASK_COMPLETE + R_PRIORITY_3 + R_EFFICIENCY_BONUS + R_PROGRESS_TOWARD
+# Map typical per-step rewards to a visible 0-1 signal while clamping extremes.
+RAW_REWARD_MIN = -1.0
+RAW_REWARD_MAX = 3.0
 
 
 # ─────────────────────────────────────────
@@ -491,6 +491,7 @@ class WarehouseEnvironment:
         target_task.picked_up = True
         self._carrying_item = True
         self._carrying_task_id = target_task.task_id
+        info.picked_up_item = True
         reward.task_completion = R_PICKUP
         reward.total += R_PICKUP
 

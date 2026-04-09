@@ -118,6 +118,7 @@ class StepReward(BaseModel):
 class StepInfo(BaseModel):
     action_valid: bool = Field(default=True)
     collision_occurred: bool = Field(default=False)
+    picked_up_item: bool = Field(default=False)
     task_completed: Optional[int] = Field(default=None, description="Task ID if completed")
     task_interrupted: Optional[int] = Field(default=None, description="Task ID if interrupted")
     new_task_spawned: Optional[int] = Field(default=None)
