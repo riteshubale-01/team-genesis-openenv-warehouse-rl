@@ -52,6 +52,10 @@ R_PRIORITY_2       = 5.0    # bonus for high-priority task
 R_PRIORITY_3       = 10.0   # bonus for urgent task
 R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
 
+# The raw step reward is mapped to [0, 1] for API-visible reward outputs.
+RAW_REWARD_MIN = R_STEP_PENALTY + R_BATTERY_LOW + R_DEAD_BATTERY + R_COLLISION + R_INVALID_ACTION
+RAW_REWARD_MAX = R_STEP_PENALTY + R_TASK_COMPLETE + R_PRIORITY_3 + R_EFFICIENCY_BONUS
+
 
 # ─────────────────────────────────────────
 # Direction helpers
@@ -88,6 +92,7 @@ class WarehouseEnvironment:
         self._step_count: int = 0
         self._done: bool = False
         self._total_reward: float = 0.0
+        self._total_reward_raw: float = 0.0
         self._completed_tasks: int = 0
         self._total_tasks_spawned: int = 0
         self._charger_positions: List[Tuple[int, int]] = []
@@ -105,6 +110,7 @@ class WarehouseEnvironment:
         self._step_count = 0
         self._done = False
         self._total_reward = 0.0
+        self._total_reward_raw = 0.0
         self._completed_tasks = 0
         self._total_tasks_spawned = 0
         self._carrying_item = False
@@ -196,17 +202,31 @@ class WarehouseEnvironment:
             if not info_obj.reason:
                 info_obj.reason = "all_tasks_completed"
 
-        self._total_reward += reward_obj.total
+        step_reward_raw = reward_obj.total
+        step_reward = self._normalize_reward(step_reward_raw)
+        self._total_reward_raw += step_reward_raw
+        self._total_reward += step_reward
+
+        avg_total_reward = self._total_reward / max(1, self._step_count)
 
         info_dict: Dict[str, Any] = info_obj.model_dump()
         info_dict["reward_breakdown"] = reward_obj.model_dump()
-        info_dict["total_reward"] = round(self._total_reward, 4)
+        info_dict["reward_raw"] = round(step_reward_raw, 4)
+        info_dict["total_reward"] = round(avg_total_reward, 4)
+        info_dict["total_reward_raw"] = round(self._total_reward_raw, 4)
         info_dict["step_count"] = self._step_count
         info_dict["battery"] = round(self._battery, 2)
         info_dict["completed_tasks"] = self._completed_tasks
         info_dict["total_tasks_spawned"] = self._total_tasks_spawned
 
-        return self.get_observation(), round(reward_obj.total, 4), self._done, info_dict
+        return self.get_observation(), round(step_reward, 4), self._done, info_dict
+
+    def _normalize_reward(self, raw_reward: float) -> float:
+        """Scale raw reward to [0, 1] for external API compatibility."""
+        if RAW_REWARD_MAX <= RAW_REWARD_MIN:
+            return 0.0
+        normalized = (raw_reward - RAW_REWARD_MIN) / (RAW_REWARD_MAX - RAW_REWARD_MIN)
+        return max(0.0, min(1.0, normalized))
 
     def get_observation(self) -> PartialObservation:
         """Return partial observation centered on robot."""
@@ -264,7 +284,7 @@ class WarehouseEnvironment:
             max_steps=MAX_STEPS_MAP[self._difficulty],
             done=self._done,
             seed=self._seed,
-            total_reward=round(self._total_reward, 4),
+            total_reward=round(self._total_reward / max(1, self._step_count), 4),
             completed_tasks=self._completed_tasks,
             total_tasks_spawned=self._total_tasks_spawned,
         )

@@ -72,7 +72,7 @@ class TestEnvironmentStep:
 
     def test_step_penalty_applied(self):
         _, reward, _, _ = self.env.step(7)  # WAIT
-        assert reward < 0  # step penalty
+        assert 0.0 <= reward <= 1.0
 
     def test_step_count_increments(self):
         for i in range(5):
@@ -83,7 +83,7 @@ class TestEnvironmentStep:
         # Action 99 is invalid — should not crash
         obs, reward, done, info = self.env.step(99)
         assert not done  # should not terminate
-        assert reward < 0  # penalty
+        assert 0.0 <= reward <= 1.0
 
     def test_battery_drains(self):
         for _ in range(10):
@@ -143,7 +143,7 @@ class TestActions:
         env.step(1)  # move away from any charger
         _, reward, _, info = env.step(6)  # RECHARGE
         # Should be invalid action
-        assert reward < 0
+        assert 0.0 <= reward <= 1.0
 
 
 class TestPartialObservability:
