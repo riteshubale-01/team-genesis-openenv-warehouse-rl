@@ -115,14 +115,18 @@ def parse_action(raw: str) -> int:
     return 7  # WAIT as fallback
 
 
-def open_score(value: float) -> float:
-    """Round score then clamp it to a strict open interval (0, 1)."""
-    score = round(float(value), 4)
-    if score <= 0.0:
+def strict_open_score(x: float) -> float:
+    x = float(x)
+    if x <= 0:
+        x = SCORE_EPSILON
+    if x >= 1:
+        x = 1 - SCORE_EPSILON
+    x = round(x, 4)
+    if x <= 0:
         return SCORE_EPSILON
-    if score >= 1.0:
-        return 1.0 - SCORE_EPSILON
-    return score
+    if x >= 1:
+        return 1 - SCORE_EPSILON
+    return x
 
 
 # ─────────────────────────────────────────
@@ -248,7 +252,7 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
             pr = pickup.get("row", 0)
             pc = pickup.get("col", 0)
             dist = abs(pr - rr) + abs(pc - rc)
-            if dist <= 1:
+            if dist == 0:
                 return 4
             if pr > rr:
                 return 1
@@ -347,7 +351,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
-    normalized_score = open_score(raw_score)
+    normalized_score = strict_open_score(raw_score)
 
     return {
         "difficulty": difficulty,
@@ -356,7 +360,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         "score": normalized_score,
         "task_score": normalized_score,
         "success": success,
-        "total_reward": open_score(sum(rewards) / max(1, len(rewards))),
+        "total_reward": strict_open_score(sum(rewards) / max(1, len(rewards))),
         "total_reward_raw": round(sum(rewards), 4),
     }
 
@@ -368,7 +372,7 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> None:
         results.append(run_episode(client=client, difficulty=difficulty, seed=seed))
 
     aggregate_raw = sum(r["score"] for r in results) / max(1, len(results))
-    aggregate_score = open_score(aggregate_raw)
+    aggregate_score = strict_open_score(aggregate_raw)
     payload = {
         "benchmark": BENCHMARK,
         "model": MODEL_NAME,

@@ -15,19 +15,23 @@ from typing import Dict, Any, List
 SCORE_EPSILON = 1e-4
 
 
-def open_score(value: float) -> float:
-    """Round score then clamp it to a strict open interval (0, 1)."""
-    score = round(float(value), 4)
-    if score <= 0.0:
+def strict_open_score(x: float) -> float:
+    x = float(x)
+    if x <= 0:
+        x = SCORE_EPSILON
+    if x >= 1:
+        x = 1 - SCORE_EPSILON
+    x = round(x, 4)
+    if x <= 0:
         return SCORE_EPSILON
-    if score >= 1.0:
-        return 1.0 - SCORE_EPSILON
-    return score
+    if x >= 1:
+        return 1 - SCORE_EPSILON
+    return x
 
 
 def score_field(value: float) -> float:
     """Normalize any score-like field to be strictly between 0 and 1."""
-    return open_score(value)
+    return strict_open_score(value)
 
 
 def compute_score(

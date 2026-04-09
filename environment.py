@@ -43,7 +43,7 @@ RECHARGE_RATE   = 20.0   # % per recharge action
 # Reward constants
 R_TASK_COMPLETE    = 10.0
 R_PICKUP           = 2.0
-R_STEP_PENALTY     = -0.1
+R_STEP_PENALTY     = -0.01
 R_COLLISION        = -2.0
 R_BATTERY_LOW      = -0.5   # when battery < 20%
 R_DEAD_BATTERY     = -5.0
@@ -51,13 +51,12 @@ R_INVALID_ACTION   = -0.3
 R_PRIORITY_2       = 5.0    # bonus for high-priority task
 R_PRIORITY_3       = 10.0   # bonus for urgent task
 R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
-R_PROGRESS_TOWARD  = 0.5    # move closer to active objective
-R_PROGRESS_AWAY    = -0.5   # move farther from active objective
+R_PROGRESS_TOWARD  = 0.1    # move closer to active objective
+R_PROGRESS_AWAY    = -0.1   # move farther from active objective
 REWARD_EPSILON     = 1e-4
 
-# Map typical per-step rewards to a visible 0-1 signal while clamping extremes.
-RAW_REWARD_MIN = -1.0
-RAW_REWARD_MAX = 3.0
+RAW_STEP_SCALE = 2.5
+RAW_TOTAL_SCALE = 120.0
 
 
 # ─────────────────────────────────────────
@@ -69,6 +68,20 @@ DIRECTION_DELTAS = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}  # up/down/lef
 
 def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def strict_open_score(x: float) -> float:
+    x = float(x)
+    if x <= 0:
+        x = REWARD_EPSILON
+    if x >= 1:
+        x = 1 - REWARD_EPSILON
+    x = round(x, 4)
+    if x <= 0:
+        return REWARD_EPSILON
+    if x >= 1:
+        return 1 - REWARD_EPSILON
+    return x
 
 
 # ─────────────────────────────────────────
@@ -135,7 +148,7 @@ class WarehouseEnvironment:
             raise RuntimeError("Call reset() before step()")
         if self._done:
             obs = self.get_observation()
-            return obs, 0.0, True, {"reason": "episode_already_done"}
+            return obs, REWARD_EPSILON, True, {"reason": "episode_already_done"}
 
         reward_obj = StepReward(total=0.0)
         info_obj   = StepInfo()
@@ -157,7 +170,8 @@ class WarehouseEnvironment:
             info_obj.action_valid = False
 
         action = ActionType(action_int)
-        pre_distance = self._active_objective_distance()
+        pre_goal = self._current_goal_position()
+        pre_distance = manhattan(self._robot_pos, pre_goal) if pre_goal is not None else None
 
         # Execute action
         if action in (ActionType.MOVE_UP, ActionType.MOVE_DOWN,
@@ -172,7 +186,9 @@ class WarehouseEnvironment:
         elif action == ActionType.WAIT:
             pass  # no-op
 
-        self._apply_progress_shaping(pre_distance, reward_obj)
+        if action in (ActionType.MOVE_UP, ActionType.MOVE_DOWN, ActionType.MOVE_LEFT, ActionType.MOVE_RIGHT):
+            post_distance = manhattan(self._robot_pos, pre_goal) if pre_goal is not None else None
+            self._apply_progress_shaping(pre_distance, post_distance, reward_obj)
 
         # Battery drain (except during recharge which adds battery)
         if action != ActionType.RECHARGE:
@@ -209,18 +225,19 @@ class WarehouseEnvironment:
                 info_obj.reason = "all_tasks_completed"
 
         step_reward_raw = reward_obj.total
-        step_reward = self._normalize_reward(step_reward_raw)
-        self._total_reward_raw += step_reward_raw
-        self._total_reward += step_reward
-        max_steps = MAX_STEPS_MAP[self._difficulty]
-        total_reward_norm = max(REWARD_EPSILON, min(1.0 - REWARD_EPSILON, self._total_reward / max(1, max_steps)))
+        self._total_reward += step_reward_raw
+        self._total_reward_raw = self._total_reward
+        step_reward = self._normalize_step_reward(step_reward_raw)
+        total_reward_norm = self._normalize_total_reward(self._total_reward)
+
+        print(f"step_reward={step_reward:.4f}, total_reward={total_reward_norm:.4f}")
 
         info_dict: Dict[str, Any] = info_obj.model_dump()
         info_dict["reward_breakdown"] = reward_obj.model_dump()
         info_dict["step_reward"] = round(step_reward, 4)
         info_dict["reward_raw"] = round(step_reward_raw, 4)
         info_dict["total_reward"] = round(total_reward_norm, 4)
-        info_dict["total_reward_raw"] = round(self._total_reward_raw, 4)
+        info_dict["total_reward_raw"] = round(self._total_reward, 4)
         info_dict["step_count"] = self._step_count
         info_dict["battery"] = round(self._battery, 2)
         info_dict["completed_tasks"] = self._completed_tasks
@@ -228,42 +245,49 @@ class WarehouseEnvironment:
 
         return self.get_observation(), round(step_reward, 4), self._done, info_dict
 
-    def _normalize_reward(self, raw_reward: float) -> float:
-        """Scale raw reward to strict (0, 1) for external API compatibility."""
-        if RAW_REWARD_MAX <= RAW_REWARD_MIN:
-            return REWARD_EPSILON
-        normalized = (raw_reward - RAW_REWARD_MIN) / (RAW_REWARD_MAX - RAW_REWARD_MIN)
-        return max(REWARD_EPSILON, min(1.0 - REWARD_EPSILON, normalized))
+    def _normalize_step_reward(self, raw_reward: float) -> float:
+        """Map raw step reward into strict open interval (0, 1)."""
+        normalized = 1.0 / (1.0 + math.exp(-raw_reward / RAW_STEP_SCALE))
+        return strict_open_score(normalized)
 
-    def _active_objective_distance(self) -> Optional[int]:
-        """Distance from robot to the current objective (pickup or dropoff)."""
-        rr, rc = self._robot_pos
+    def _normalize_total_reward(self, raw_total: float) -> float:
+        """Map cumulative raw reward into strict open interval (0, 1)."""
+        normalized = 1.0 / (1.0 + math.exp(-raw_total / RAW_TOTAL_SCALE))
+        return strict_open_score(normalized)
 
+    def _current_goal_position(self) -> Optional[Tuple[int, int]]:
+        """Current goal position: pickup location if not carrying, else dropoff."""
         if self._carrying_item and self._carrying_task_id is not None:
             task = next((t for t in self._tasks if t.task_id == self._carrying_task_id), None)
             if task is not None and not task.completed:
-                return manhattan((rr, rc), (task.dropoff_pos.row, task.dropoff_pos.col))
+                return (task.dropoff_pos.row, task.dropoff_pos.col)
 
-        pickup_distances: List[int] = []
+        rr, rc = self._robot_pos
+        best: Optional[Tuple[int, int]] = None
+        best_dist: Optional[int] = None
         for task in self._tasks:
             if task.completed or task.picked_up:
                 continue
-            pickup_distances.append(manhattan((rr, rc), (task.pickup_pos.row, task.pickup_pos.col)))
-        if pickup_distances:
-            return min(pickup_distances)
-        return None
+            pos = (task.pickup_pos.row, task.pickup_pos.col)
+            dist = manhattan((rr, rc), pos)
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best = pos
+        return best
 
-    def _apply_progress_shaping(self, pre_distance: Optional[int], reward: StepReward) -> None:
+    def _apply_progress_shaping(self, pre_distance: Optional[int], post_distance: Optional[int], reward: StepReward) -> None:
         """Reward progress toward objective and penalize moving away."""
-        post_distance = self._active_objective_distance()
         if pre_distance is None or post_distance is None:
             return
-        if post_distance < pre_distance:
-            reward.progress_shaping += R_PROGRESS_TOWARD
-            reward.total += R_PROGRESS_TOWARD
-        elif post_distance > pre_distance:
-            reward.progress_shaping += R_PROGRESS_AWAY
-            reward.total += R_PROGRESS_AWAY
+        delta = pre_distance - post_distance
+        if delta > 0:
+            shaped = R_PROGRESS_TOWARD * delta
+            reward.progress_shaping += shaped
+            reward.total += shaped
+        elif delta < 0:
+            shaped = R_PROGRESS_AWAY * abs(delta)
+            reward.progress_shaping += shaped
+            reward.total += shaped
 
     def get_observation(self) -> PartialObservation:
         """Return partial observation centered on robot."""
@@ -321,7 +345,7 @@ class WarehouseEnvironment:
             max_steps=MAX_STEPS_MAP[self._difficulty],
             done=self._done,
             seed=self._seed,
-            total_reward=round(max(REWARD_EPSILON, min(1.0 - REWARD_EPSILON, self._total_reward / max(1, MAX_STEPS_MAP[self._difficulty]))), 4),
+            total_reward=round(self._normalize_total_reward(self._total_reward), 4),
             completed_tasks=self._completed_tasks,
             total_tasks_spawned=self._total_tasks_spawned,
         )
@@ -380,11 +404,21 @@ class WarehouseEnvironment:
             else:
                 priority = self._rng.randint(1, 3)
 
-        shelves = [s for s in self._shelf_positions
-                   if s != self._robot_pos]
+        pickup_cells = []
+        for sr, sc in self._shelf_positions:
+            for pr, pc in ((sr - 1, sc), (sr + 1, sc)):
+                if not (0 <= pr < GRID_SIZE and 0 <= pc < GRID_SIZE):
+                    continue
+                if self._grid[pr][pc] != CellType.EMPTY.value:
+                    continue
+                if (pr, pc) == self._robot_pos:
+                    continue
+                pickup_cells.append((pr, pc))
+        if not pickup_cells:
+            pickup_cells = [(5, 1)]
         targets = [t for t in self._target_positions]
 
-        pickup = self._rng.choice(shelves)
+        pickup = self._rng.choice(pickup_cells)
         dropoff = self._rng.choice(targets)
 
         task = Task(
@@ -479,7 +513,7 @@ class WarehouseEnvironment:
             if t.completed or t.picked_up:
                 continue
             pr, pc = t.pickup_pos.row, t.pickup_pos.col
-            if manhattan((r, c), (pr, pc)) <= 1:
+            if (r, c) == (pr, pc):
                 target_task = t
                 break
 
@@ -512,7 +546,7 @@ class WarehouseEnvironment:
             return
 
         dr, dc = task.dropoff_pos.row, task.dropoff_pos.col
-        if manhattan((r, c), (dr, dc)) <= 1:
+        if (r, c) == (dr, dc) and not task.completed:
             # Successful delivery
             task.completed = True
             self._carrying_item = False
@@ -538,6 +572,7 @@ class WarehouseEnvironment:
             reward.task_completion = completion_reward
             reward.total += completion_reward
             info.task_completed = task.task_id
+            info.dropped_off_item = True
         else:
             # Wrong location — penalise
             reward.invalid_action_penalty += R_INVALID_ACTION

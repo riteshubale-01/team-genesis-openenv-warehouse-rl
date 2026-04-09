@@ -165,7 +165,7 @@ class TestActions:
         task = obs.active_tasks[0]
         pickup_r = task.pickup_pos.row
         pickup_c = task.pickup_pos.col
-        target_r = min(9, pickup_r + 1)
+        target_r = pickup_r
         target_c = pickup_c
 
         def move_toward(curr_r: int, curr_c: int) -> int:
@@ -179,7 +179,7 @@ class TestActions:
                 return 2  # MOVE_LEFT
             return 7  # WAIT
 
-        # Navigate to an accessible cell adjacent to the pickup shelf.
+        # Navigate to exact pickup location.
         for _ in range(80):
             curr = env.get_observation().robot_pos
             if curr.row == target_r and curr.col == target_c:

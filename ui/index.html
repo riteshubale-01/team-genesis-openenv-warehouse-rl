@@ -636,20 +636,14 @@
       if (carrying) {
         const drop = task.dropoff_pos;
         const dist = Math.abs(drop.row - start.r) + Math.abs(drop.col - start.c);
-        if (dist <= 1) return 5;
-        return bfsNextAction(state, start, (r, c) => {
-          const d = Math.abs(drop.row - r) + Math.abs(drop.col - c);
-          return d <= 1;
-        });
+        if (dist === 0) return 5;
+        return bfsNextAction(state, start, (r, c) => r === drop.row && c === drop.col);
       }
 
       const pick = task.pickup_pos;
       const dist = Math.abs(pick.row - start.r) + Math.abs(pick.col - start.c);
-      if (dist <= 1) return 4;
-      return bfsNextAction(state, start, (r, c) => {
-        const d = Math.abs(pick.row - r) + Math.abs(pick.col - c);
-        return d <= 1;
-      });
+      if (dist === 0) return 4;
+      return bfsNextAction(state, start, (r, c) => r === pick.row && c === pick.col);
     }
 
     function chooseAutoAction() {
