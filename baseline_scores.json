@@ -13,6 +13,26 @@
       "success": false,
       "total_reward": 0.0001,
       "total_reward_raw": 0
+    },
+    {
+      "difficulty": "medium",
+      "seed": 42,
+      "steps": 0,
+      "score": 0.0001,
+      "task_score": 0.0001,
+      "success": false,
+      "total_reward": 0.0001,
+      "total_reward_raw": 0
+    },
+    {
+      "difficulty": "hard",
+      "seed": 42,
+      "steps": 0,
+      "score": 0.0001,
+      "task_score": 0.0001,
+      "success": false,
+      "total_reward": 0.0001,
+      "total_reward_raw": 0
     }
   ],
   "aggregate_score": 0.0001

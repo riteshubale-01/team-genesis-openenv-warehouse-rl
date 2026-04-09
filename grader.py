@@ -62,37 +62,43 @@ def compute_score(
     -------
     dict with 'score' (float strictly between 0 and 1) and component breakdown
     """
+    eps = SCORE_EPSILON
+
     # ── Task completion (40%) ──────────────────────
     if total_tasks_spawned == 0:
-        completion_ratio = 0.0
+        completion_ratio = eps
     else:
-        completion_ratio = min(1.0, completed_tasks / total_tasks_spawned)
+        completion_ratio = completed_tasks / total_tasks_spawned
+        completion_ratio = strict_open_score(completion_ratio)
     completion_score = completion_ratio * 0.40
 
     # ── Efficiency (25%) ──────────────────────────
     # Reward finishing early; penalise using all steps
     if total_steps == 0:
-        efficiency = 1.0
+        efficiency = 1.0 - eps
     else:
-        efficiency = max(0.0, 1.0 - (total_steps / max_steps))
+        efficiency = 1.0 - (total_steps / max_steps)
+        efficiency = strict_open_score(efficiency)
     # Boost efficiency score if tasks were completed
     if completion_ratio > 0:
         efficiency = 0.5 + 0.5 * efficiency  # at least 0.5 if tasks done
     else:
         efficiency = efficiency * 0.5
-    efficiency = min(1.0, efficiency)
+    efficiency = strict_open_score(efficiency)
     efficiency_score = efficiency * 0.25
 
     # ── Safety (20%) ─────────────────────────────
     # Allow up to 3 collisions before penalizing heavily
-    safety_score_raw = max(0.0, 1.0 - collision_count * 0.2)
+    safety_score_raw = 1.0 - collision_count * 0.2
+    safety_score_raw = strict_open_score(safety_score_raw)
     safety_score = safety_score_raw * 0.20
 
     # ── Battery management (15%) ──────────────────
     if battery_depleted:
-        battery_score_raw = 0.0
+        battery_score_raw = eps
     else:
         battery_score_raw = battery_remaining / 100.0
+        battery_score_raw = strict_open_score(battery_score_raw)
     battery_score = battery_score_raw * 0.15
 
     # ── Difficulty multiplier ─────────────────────
@@ -105,18 +111,18 @@ def compute_score(
         "score": normalized_score,
         "task_score": normalized_score,
         "components": {
-            "completion_ratio": round(completion_ratio, 4),
+            "completion_ratio": score_field(completion_ratio),
             "completion_score": score_field(completion_score),
-            "efficiency": round(efficiency, 4),
+            "efficiency": score_field(efficiency),
             "efficiency_score": score_field(efficiency_score),
             "safety_score_raw": score_field(safety_score_raw),
             "safety_score": score_field(safety_score),
             "battery_score_raw": score_field(battery_score_raw),
             "battery_score": score_field(battery_score),
-            "difficulty_multiplier": diff_mult,
             "raw_total": score_field(total_raw),
         },
         "metadata": {
+            "difficulty_multiplier": diff_mult,
             "completed_tasks": completed_tasks,
             "total_tasks_spawned": total_tasks_spawned,
             "total_steps": total_steps,
