@@ -124,21 +124,18 @@ def strict_open_score(x: float) -> float:
     return x
 
 
-def sanitize_task_output(task_obj: Dict[str, Any]) -> Dict[str, float]:
-    """Return a strict validator-safe task object with only score fields."""
-    source_score = task_obj.get("score", task_obj.get("task_score", SCORE_EPSILON))
-    safe_score = strict_open_score(float(source_score))
-    assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
-    return {
-        "score": safe_score,
-        "task_score": safe_score,
-    }
-
-
-def sanitize_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, float]]]:
-    """Global sanitizer: strips all extras and emits exact required schema."""
-    clean_tasks = [sanitize_task_output(task) for task in tasks]
-    return {"tasks": clean_tasks}
+def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, float]]]:
+    """Final sanitizer that enforces exact validator payload schema and score bounds."""
+    clean: List[Dict[str, float]] = []
+    for task in tasks:
+        s = strict_open_score(float(task["score"]))
+        assert isinstance(s, float), f"Score must be float, got: {type(s)}"
+        assert 0 < s < 1, f"Invalid score: {s}"
+        clean.append({
+            "score": s,
+            "task_score": s,
+        })
+    return {"tasks": clean}
 
 
 # ─────────────────────────────────────────
@@ -364,9 +361,9 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         )
 
     safe_score = strict_open_score(raw_score)
+    assert isinstance(safe_score, float), f"Score must be float, got: {type(safe_score)}"
     assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
-
-    return sanitize_task_output({"score": safe_score})
+    return {"score": safe_score}
 
 
 def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, List[Dict[str, float]]]:
@@ -376,7 +373,7 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
         episode_result = run_episode(client=client, difficulty=difficulty, seed=seed)
         results.append(episode_result)
 
-    payload = sanitize_tasks_payload(results)
+    payload = enforce_strict(results)
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"Saved baseline scores to {output_json}", file=sys.stderr)
