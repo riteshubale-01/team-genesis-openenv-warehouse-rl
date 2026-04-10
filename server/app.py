@@ -25,6 +25,7 @@ from warehouse_env.models import (
     PartialObservation,
 )
 from environment import WarehouseEnvironment
+from inference import run_baseline
 
 app = FastAPI(
     title="Warehouse RL OpenEnv",
@@ -129,6 +130,19 @@ def state():
     """Return full internal state (for debugging / evaluation)."""
     try:
         return env.get_state()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/run")
+def run(seed: int = 42, difficulties: str = "easy,medium,hard"):
+    """Run inference and return strict validator-safe tasks payload only."""
+    try:
+        diffs = [d.strip() for d in difficulties.split(",") if d.strip()]
+        allowed = {"easy", "medium", "hard"}
+        if not diffs or any(d not in allowed for d in diffs):
+            raise ValueError("difficulties must be a comma-separated subset of easy,medium,hard")
+        return run_baseline(difficulties=diffs, seed=int(seed), output_json="baseline_scores.json")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

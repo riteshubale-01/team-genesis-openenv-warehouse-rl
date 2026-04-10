@@ -1,27 +1,16 @@
 {
-  "benchmark": "WarehouseRL-v1",
-  "model": "gpt-4o-mini",
-  "api_base_url": "https://api.openai.com/v1",
-  "seed": 42,
-  "results": [
+  "tasks": [
     {
-      "difficulty": "easy",
-      "seed": 42,
       "score": 1e-06,
       "task_score": 1e-06
     },
     {
-      "difficulty": "medium",
-      "seed": 42,
       "score": 1e-06,
       "task_score": 1e-06
     },
     {
-      "difficulty": "hard",
-      "seed": 42,
       "score": 1e-06,
       "task_score": 1e-06
     }
-  ],
-  "aggregate_score": 1e-06
+  ]
 }

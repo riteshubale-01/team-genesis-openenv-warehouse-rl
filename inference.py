@@ -124,16 +124,21 @@ def strict_open_score(x: float) -> float:
     return x
 
 
-def sanitize_task_output(task_obj: Dict[str, Any]) -> Dict[str, Any]:
-    """Whitelist task payload fields to prevent leaking validator-breaking extras."""
-    safe_score = strict_open_score(float(task_obj.get("score", SCORE_EPSILON)))
+def sanitize_task_output(task_obj: Dict[str, Any]) -> Dict[str, float]:
+    """Return a strict validator-safe task object with only score fields."""
+    source_score = task_obj.get("score", task_obj.get("task_score", SCORE_EPSILON))
+    safe_score = strict_open_score(float(source_score))
     assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
     return {
-        "difficulty": str(task_obj.get("difficulty", "easy")),
-        "seed": int(task_obj.get("seed", SEED)),
         "score": safe_score,
         "task_score": safe_score,
     }
+
+
+def sanitize_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, float]]]:
+    """Global sanitizer: strips all extras and emits exact required schema."""
+    clean_tasks = [sanitize_task_output(task) for task in tasks]
+    return {"tasks": clean_tasks}
 
 
 # ─────────────────────────────────────────
@@ -278,7 +283,7 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
 # Main inference loop
 # ─────────────────────────────────────────
 
-def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, Any]:
+def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, float]:
     task_name = f"{TASK_NAME}_{difficulty}"
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
@@ -361,36 +366,23 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
     safe_score = strict_open_score(raw_score)
     assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
 
-    return sanitize_task_output({
-        "difficulty": difficulty,
-        "seed": seed,
-        "score": safe_score,
-    })
+    return sanitize_task_output({"score": safe_score})
 
 
-def run_baseline(difficulties: List[str], seed: int, output_json: str) -> List[Dict[str, Any]]:
+def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, List[Dict[str, float]]]:
     client = create_openai_client()
     results = []
     for difficulty in difficulties:
         episode_result = run_episode(client=client, difficulty=difficulty, seed=seed)
-        results.append(sanitize_task_output(episode_result))
+        results.append(episode_result)
 
-    aggregate_raw = sum(r["score"] for r in results) / max(1, len(results))
-    aggregate_score = strict_open_score(aggregate_raw)
-    payload = {
-        "benchmark": BENCHMARK,
-        "model": MODEL_NAME,
-        "api_base_url": API_BASE_URL,
-        "seed": seed,
-        "results": results,
-        "aggregate_score": aggregate_score,
-    }
+    payload = sanitize_tasks_payload(results)
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"Saved baseline scores to {output_json}", file=sys.stderr)
 
     # Runtime-facing return is intentionally strict and minimal.
-    return [sanitize_task_output(r) for r in results]
+    return payload
 
 
 def parse_args() -> argparse.Namespace:
@@ -417,5 +409,5 @@ if __name__ == "__main__":
     if not diffs or invalid:
         raise ValueError(f"Invalid difficulties: {invalid}. Allowed: easy,medium,hard")
 
-    clean_results = run_baseline(difficulties=diffs, seed=args.seed, output_json=args.output_json)
-    print(json.dumps(clean_results, indent=2), file=sys.stderr)
+    clean_payload = run_baseline(difficulties=diffs, seed=args.seed, output_json=args.output_json)
+    print(json.dumps(clean_payload, indent=2), file=sys.stderr)
