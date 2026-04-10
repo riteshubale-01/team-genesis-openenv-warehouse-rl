@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Dict, Any, List
 
 
-SCORE_EPSILON = 1e-4
+SCORE_EPSILON = 1e-6
 
 
 def strict_open_score(x: float) -> float:
@@ -21,7 +21,7 @@ def strict_open_score(x: float) -> float:
         x = SCORE_EPSILON
     if x >= 1:
         x = 1 - SCORE_EPSILON
-    x = round(x, 4)
+    x = round(x, 6)
     if x <= 0:
         return SCORE_EPSILON
     if x >= 1:
@@ -110,14 +110,6 @@ def compute_score(
     return {
         "score": normalized_score,
         "task_score": normalized_score,
-        "components": {
-            "completion_ratio": score_field(completion_ratio),
-            "completion_score": score_field(completion_score),
-            "efficiency": score_field(efficiency),
-            "efficiency_score": score_field(efficiency_score),
-            "safety_score": score_field(safety_score),
-            "battery_score": score_field(battery_score),
-        },
     }
 
 

@@ -34,7 +34,7 @@ SERVER_URL: str = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 DIFFICULTY: str = os.environ.get("DIFFICULTY", "easy")
 SEED: int       = int(os.environ.get("SEED", "42"))
 MAX_RETRIES: int = 3
-SCORE_EPSILON: float = 1e-4
+SCORE_EPSILON: float = 1e-6
 
 TASK_NAME  = "warehouse_delivery"
 BENCHMARK  = "WarehouseRL-v1"
@@ -121,7 +121,7 @@ def strict_open_score(x: float) -> float:
         x = SCORE_EPSILON
     if x >= 1:
         x = 1 - SCORE_EPSILON
-    x = round(x, 4)
+    x = round(x, 6)
     if x <= 0:
         return SCORE_EPSILON
     if x >= 1:
@@ -358,7 +358,6 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         "seed": seed,
         "score": normalized_score,
         "task_score": normalized_score,
-        "success": success,
     }
 
 
