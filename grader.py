@@ -18,11 +18,6 @@ SCORE_EPSILON = 1e-6
 def strict_open_score(x: float) -> float:
     x = float(x)
     if x <= 0:
-        x = SCORE_EPSILON
-    if x >= 1:
-        x = 1 - SCORE_EPSILON
-    x = round(x, 6)
-    if x <= 0:
         return SCORE_EPSILON
     if x >= 1:
         return 1 - SCORE_EPSILON

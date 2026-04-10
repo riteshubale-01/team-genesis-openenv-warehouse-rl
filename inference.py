@@ -118,11 +118,6 @@ def parse_action(raw: str) -> int:
 def strict_open_score(x: float) -> float:
     x = float(x)
     if x <= 0:
-        x = SCORE_EPSILON
-    if x >= 1:
-        x = 1 - SCORE_EPSILON
-    x = round(x, 6)
-    if x <= 0:
         return SCORE_EPSILON
     if x >= 1:
         return 1 - SCORE_EPSILON
@@ -131,11 +126,13 @@ def strict_open_score(x: float) -> float:
 
 def sanitize_task_output(task_obj: Dict[str, Any]) -> Dict[str, Any]:
     """Whitelist task payload fields to prevent leaking validator-breaking extras."""
+    safe_score = strict_open_score(float(task_obj.get("score", SCORE_EPSILON)))
+    assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
     return {
         "difficulty": str(task_obj.get("difficulty", "easy")),
         "seed": int(task_obj.get("seed", SEED)),
-        "score": strict_open_score(float(task_obj.get("score", SCORE_EPSILON))),
-        "task_score": strict_open_score(float(task_obj.get("task_score", SCORE_EPSILON))),
+        "score": safe_score,
+        "task_score": safe_score,
     }
 
 
@@ -361,13 +358,13 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
-    normalized_score = strict_open_score(raw_score)
+    safe_score = strict_open_score(raw_score)
+    assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
 
     return sanitize_task_output({
         "difficulty": difficulty,
         "seed": seed,
-        "score": normalized_score,
-        "task_score": normalized_score,
+        "score": safe_score,
     })
 
 
