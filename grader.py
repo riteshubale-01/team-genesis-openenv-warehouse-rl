@@ -115,22 +115,8 @@ def compute_score(
             "completion_score": score_field(completion_score),
             "efficiency": score_field(efficiency),
             "efficiency_score": score_field(efficiency_score),
-            "safety_score_raw": score_field(safety_score_raw),
             "safety_score": score_field(safety_score),
-            "battery_score_raw": score_field(battery_score_raw),
             "battery_score": score_field(battery_score),
-            "raw_total": score_field(total_raw),
-        },
-        "metadata": {
-            "difficulty_multiplier": diff_mult,
-            "completed_tasks": completed_tasks,
-            "total_tasks_spawned": total_tasks_spawned,
-            "total_steps": total_steps,
-            "max_steps": max_steps,
-            "collision_count": collision_count,
-            "battery_remaining": battery_remaining,
-            "battery_depleted": battery_depleted,
-            "difficulty": difficulty,
         },
     }
 
