@@ -129,6 +129,16 @@ def strict_open_score(x: float) -> float:
     return x
 
 
+def sanitize_task_output(task_obj: Dict[str, Any]) -> Dict[str, Any]:
+    """Whitelist task payload fields to prevent leaking validator-breaking extras."""
+    return {
+        "difficulty": str(task_obj.get("difficulty", "easy")),
+        "seed": int(task_obj.get("seed", SEED)),
+        "score": strict_open_score(float(task_obj.get("score", SCORE_EPSILON))),
+        "task_score": strict_open_score(float(task_obj.get("task_score", SCORE_EPSILON))),
+    }
+
+
 # ─────────────────────────────────────────
 # Environment Client
 # ─────────────────────────────────────────
@@ -353,19 +363,20 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
 
     normalized_score = strict_open_score(raw_score)
 
-    return {
+    return sanitize_task_output({
         "difficulty": difficulty,
         "seed": seed,
         "score": normalized_score,
         "task_score": normalized_score,
-    }
+    })
 
 
 def run_baseline(difficulties: List[str], seed: int, output_json: str) -> None:
     client = create_openai_client()
     results = []
     for difficulty in difficulties:
-        results.append(run_episode(client=client, difficulty=difficulty, seed=seed))
+        episode_result = run_episode(client=client, difficulty=difficulty, seed=seed)
+        results.append(sanitize_task_output(episode_result))
 
     aggregate_raw = sum(r["score"] for r in results) / max(1, len(results))
     aggregate_score = strict_open_score(aggregate_raw)
