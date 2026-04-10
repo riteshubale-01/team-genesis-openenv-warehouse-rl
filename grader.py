@@ -24,11 +24,6 @@ def strict_open_score(x: float) -> float:
     return x
 
 
-def score_field(value: float) -> float:
-    """Normalize any score-like field to be strictly between 0 and 1."""
-    return strict_open_score(value)
-
-
 def compute_score(
     completed_tasks: int,
     total_tasks_spawned: int,
@@ -61,46 +56,41 @@ def compute_score(
 
     # ── Task completion (40%) ──────────────────────
     if total_tasks_spawned == 0:
-        completion_ratio = eps
+        completion_ratio = 0.0
     else:
         completion_ratio = completed_tasks / total_tasks_spawned
-        completion_ratio = strict_open_score(completion_ratio)
     completion_score = completion_ratio * 0.40
 
     # ── Efficiency (25%) ──────────────────────────
     # Reward finishing early; penalise using all steps
     if total_steps == 0:
-        efficiency = 1.0 - eps
+        efficiency = 1.0
     else:
         efficiency = 1.0 - (total_steps / max_steps)
-        efficiency = strict_open_score(efficiency)
     # Boost efficiency score if tasks were completed
     if completion_ratio > 0:
         efficiency = 0.5 + 0.5 * efficiency  # at least 0.5 if tasks done
     else:
         efficiency = efficiency * 0.5
-    efficiency = strict_open_score(efficiency)
     efficiency_score = efficiency * 0.25
 
     # ── Safety (20%) ─────────────────────────────
     # Allow up to 3 collisions before penalizing heavily
     safety_score_raw = 1.0 - collision_count * 0.2
-    safety_score_raw = strict_open_score(safety_score_raw)
     safety_score = safety_score_raw * 0.20
 
     # ── Battery management (15%) ──────────────────
     if battery_depleted:
-        battery_score_raw = eps
+        battery_score_raw = 0.0
     else:
         battery_score_raw = battery_remaining / 100.0
-        battery_score_raw = strict_open_score(battery_score_raw)
     battery_score = battery_score_raw * 0.15
 
     # ── Difficulty multiplier ─────────────────────
     diff_mult = {"easy": 1.0, "medium": 1.1, "hard": 1.2}[difficulty]
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
-    normalized_score = score_field(total_raw * diff_mult)
+    normalized_score = strict_open_score(total_raw * diff_mult)
 
     return {
         "score": normalized_score,

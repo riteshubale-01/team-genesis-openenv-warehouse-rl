@@ -115,20 +115,17 @@ def parse_action(raw: str) -> int:
     return 7  # WAIT as fallback
 
 
-def strict_open_score(x: float) -> float:
-    x = float(x)
-    if x <= 0:
-        return SCORE_EPSILON
-    if x >= 1:
-        return 1 - SCORE_EPSILON
-    return x
-
-
 def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, float]]]:
     """Final sanitizer that enforces exact validator payload schema and score bounds."""
     clean: List[Dict[str, float]] = []
     for task in tasks:
-        s = strict_open_score(float(task["score"]))
+        s = float(task["score"])
+
+        if s <= 0:
+            s = 1e-6
+        elif s >= 1:
+            s = 1 - 1e-6
+
         assert isinstance(s, float), f"Score must be float, got: {type(s)}"
         assert 0 < s < 1, f"Invalid score: {s}"
         clean.append({
@@ -288,7 +285,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
     step_infos: List[Dict[str, Any]] = []
     step_n = 0
     success = False
-    raw_score = 0.0
+    safe_score = 1e-6
     use_heuristic_fallback = client is None
 
     try:
@@ -344,15 +341,13 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
                 f"reward={reward:.2f} done={'true' if done else 'false'} error={step_error}"
             )
 
-        if step_infos:
-            graded = score_episode(step_infos, difficulty=difficulty)
-            raw_score = float(graded["score"])
-            success = raw_score > 0.0
-        else:
-            raw_score = 0.0
+        graded = score_episode(step_infos, difficulty=difficulty)
+        safe_score = float(graded["score"])
+        success = safe_score > 0.0
 
     except Exception:
-        raw_score = 0.0
+        graded = score_episode([], difficulty=difficulty)
+        safe_score = float(graded["score"])
     finally:
         rewards_str = ",".join(f"{r:.2f}" for r in rewards)
         print(
@@ -360,9 +355,8 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
-    safe_score = strict_open_score(raw_score)
     assert isinstance(safe_score, float), f"Score must be float, got: {type(safe_score)}"
-    assert 0 < safe_score < 1, f"Invalid score: {safe_score}"
+    assert 0 < safe_score < 1, f"Invalid score from grader: {safe_score}"
     return {"score": safe_score}
 
 
