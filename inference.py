@@ -368,7 +368,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
     })
 
 
-def run_baseline(difficulties: List[str], seed: int, output_json: str) -> None:
+def run_baseline(difficulties: List[str], seed: int, output_json: str) -> List[Dict[str, Any]]:
     client = create_openai_client()
     results = []
     for difficulty in difficulties:
@@ -388,6 +388,9 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> None:
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"Saved baseline scores to {output_json}", file=sys.stderr)
+
+    # Runtime-facing return is intentionally strict and minimal.
+    return [sanitize_task_output(r) for r in results]
 
 
 def parse_args() -> argparse.Namespace:
@@ -414,4 +417,5 @@ if __name__ == "__main__":
     if not diffs or invalid:
         raise ValueError(f"Invalid difficulties: {invalid}. Allowed: easy,medium,hard")
 
-    run_baseline(difficulties=diffs, seed=args.seed, output_json=args.output_json)
+    clean_results = run_baseline(difficulties=diffs, seed=args.seed, output_json=args.output_json)
+    print(json.dumps(clean_results, indent=2), file=sys.stderr)
