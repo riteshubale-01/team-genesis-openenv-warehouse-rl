@@ -37,6 +37,19 @@ def finalize_score(x):
     except:
         return 0.01
 
+    if not (x == x and x != float("inf") and x != float("-inf")):
+        return 0.01
+
+    if x < 0:
+        x = 0.0
+    elif x > 1:
+        x = 1.0
+
+    if x <= 0:
+        x = 0.01
+    elif x >= 1:
+        x = 0.99
+
     # Step 1: round to 2 decimals
     x = round(x, 2)
 
