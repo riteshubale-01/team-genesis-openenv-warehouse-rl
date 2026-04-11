@@ -51,17 +51,26 @@ ACTION_NAMES = {
 }
 
 
-def clamp_open01(x):
+def finalize_score(x):
     try:
         x = float(x)
     except:
-        return SCORE_EPSILON
+        return 0.01
 
+    # Step 1: round to 2 decimals
+    x = round(x, 2)
+
+    # Step 2: enforce strict range
     if x <= 0:
-        return SCORE_EPSILON
+        return 0.01
     if x >= 1:
-        return 1 - SCORE_EPSILON
+        return 0.99
+
     return x
+
+
+def clamp_open01(x):
+    return finalize_score(x)
 
 # ─────────────────────────────────────────
 # OpenAI client helpers
@@ -329,7 +338,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             try:
                 step_data = env_step(action)
                 obs = step_data.get("observation", {})
-                reward = float(step_data.get("reward", 0.05))
+                reward = finalize_score(step_data.get("reward", 0.01))
                 done = bool(step_data.get("done", False))
                 info = step_data.get("info", {}) or {}
                 rewards.append(reward)
@@ -339,25 +348,25 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
                 if info_error:
                     step_error = str(info_error)
             except Exception as e:
-                reward = 0.05
+                reward = finalize_score(0.01)
                 done = True
                 rewards.append(reward)
                 step_error = sanitize_error(e)
 
             print(
                 f"[STEP]  step={step_n} action={ACTION_NAMES.get(action, 'UNKNOWN')} "
-                f"reward={reward:.2f} done={'true' if done else 'false'} error={step_error}"
+                f"reward={reward} done={'true' if done else 'false'} error={step_error}"
             )
 
         graded = score_episode(step_infos, difficulty=difficulty)
-        safe_score = clamp_open01(graded.get("score", SCORE_EPSILON))
+        safe_score = finalize_score(graded.get("score", SCORE_EPSILON))
         success = safe_score > 0.0
 
     except Exception:
         graded = score_episode([], difficulty=difficulty)
-        safe_score = clamp_open01(graded.get("score", SCORE_EPSILON))
+        safe_score = finalize_score(graded.get("score", SCORE_EPSILON))
     finally:
-        rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+        rewards_str = ",".join(str(r) for r in rewards)
         print(
             f"[END]   success={'true' if success else 'false'} "
             f"steps={step_n} rewards={rewards_str}"
@@ -377,16 +386,16 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
 
     tasks = enforce_strict(results).get("tasks", [])
     for t in tasks:
-        t["score"] = clamp_open01(t.get("score", SCORE_EPSILON))
-        t["task_score"] = clamp_open01(t.get("task_score", t["score"]))
+        t["score"] = finalize_score(t.get("score", SCORE_EPSILON))
+        t["task_score"] = finalize_score(t.get("task_score", t["score"]))
         # Force strict equality required by validators.
         t["task_score"] = t["score"]
 
     output: Dict[str, Any] = {}
     output["tasks"] = tasks
 
-    aggregate_raw = (sum(t["score"] for t in tasks) / len(tasks)) if tasks else 0.05
-    output["aggregate_score"] = clamp_open01(aggregate_raw)
+    aggregate_raw = (sum(t["score"] for t in tasks) / len(tasks)) if tasks else 0.01
+    output["aggregate_score"] = finalize_score(aggregate_raw)
 
     task_scores = [t["score"] for t in output["tasks"]]
     aggregate_score = output["aggregate_score"]

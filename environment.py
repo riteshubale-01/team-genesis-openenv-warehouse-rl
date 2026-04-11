@@ -74,17 +74,26 @@ def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
-def clamp_open01(x):
+def finalize_score(x):
     try:
         x = float(x)
     except:
-        return SCORE_EPSILON
+        return 0.01
 
+    # Step 1: round to 2 decimals
+    x = round(x, 2)
+
+    # Step 2: enforce strict range
     if x <= 0:
-        return SCORE_EPSILON
+        return 0.01
     if x >= 1:
-        return 1 - SCORE_EPSILON
+        return 0.99
+
     return x
+
+
+def clamp_open01(x):
+    return finalize_score(x)
 
 
 def strict_open_score(x: float) -> float:
@@ -155,7 +164,7 @@ class WarehouseEnvironment:
             raise RuntimeError("Call reset() before step()")
         if self._done:
             obs = self.get_observation()
-            return obs, REWARD_EPSILON, True, {"reason": "episode_already_done"}
+            return obs, finalize_score(REWARD_EPSILON), True, {"reason": "episode_already_done"}
 
         reward_obj = StepReward(total=0.0)
         info_obj   = StepInfo()
@@ -232,42 +241,42 @@ class WarehouseEnvironment:
                 info_obj.reason = "all_tasks_completed"
 
         step_reward_raw = reward_obj.total
-        step_reward = self._normalize_step_reward(step_reward_raw)
+        step_reward = finalize_score(self._normalize_step_reward(step_reward_raw))
         max_steps = MAX_STEPS_MAP[self._difficulty]
-        step_reward_scaled = step_reward / max_steps
+        step_reward_scaled = finalize_score(step_reward / max_steps)
         if self._carrying_item:
             self._total_reward -= CARRY_STEP_DECAY
         else:
             self._total_reward += step_reward_scaled
         self._total_reward_raw += step_reward_raw
-        total_reward_norm = min(0.9999, max(0.0001, self._total_reward))
+        total_reward_norm = finalize_score(min(0.9999, max(0.0001, self._total_reward)))
 
-        print(f"step_reward={step_reward:.4f}, total_reward={total_reward_norm:.4f}")
+        print(f"step_reward={step_reward}, total_reward={total_reward_norm}")
 
         info_dict: Dict[str, Any] = info_obj.model_dump()
         info_dict["reward_breakdown"] = reward_obj.model_dump()
-        info_dict["step_reward"] = round(step_reward, 4)
-        info_dict["step_reward_scaled"] = round(step_reward_scaled, 6)
+        info_dict["step_reward"] = finalize_score(step_reward)
+        info_dict["step_reward_scaled"] = finalize_score(step_reward_scaled)
         info_dict["carry_decay"] = CARRY_STEP_DECAY if self._carrying_item else 0.0
-        info_dict["reward_raw"] = round(step_reward_raw, 4)
-        info_dict["total_reward"] = round(total_reward_norm, 4)
-        info_dict["total_reward_raw"] = round(self._total_reward_raw, 4)
+        info_dict["reward_raw"] = step_reward_raw
+        info_dict["total_reward"] = finalize_score(total_reward_norm)
+        info_dict["total_reward_raw"] = self._total_reward_raw
         info_dict["step_count"] = self._step_count
-        info_dict["battery"] = round(self._battery, 2)
+        info_dict["battery"] = self._battery
         info_dict["completed_tasks"] = self._completed_tasks
         info_dict["total_tasks_spawned"] = self._total_tasks_spawned
 
-        return self.get_observation(), round(step_reward, 4), self._done, info_dict
+        return self.get_observation(), finalize_score(step_reward), self._done, info_dict
 
     def _normalize_step_reward(self, raw_reward: float) -> float:
         """Map raw step reward into strict open interval (0, 1)."""
         normalized = 1.0 / (1.0 + math.exp(-raw_reward / RAW_STEP_SCALE))
-        return strict_open_score(normalized)
+        return finalize_score(normalized)
 
     def _normalize_total_reward(self, raw_total: float) -> float:
         """Map cumulative raw reward into strict open interval (0, 1)."""
         normalized = 1.0 / (1.0 + math.exp(-raw_total / RAW_TOTAL_SCALE))
-        return strict_open_score(normalized)
+        return finalize_score(normalized)
 
     def _current_goal_position(self) -> Optional[Tuple[int, int]]:
         """Current goal position: pickup location if not carrying, else dropoff."""
@@ -336,7 +345,7 @@ class WarehouseEnvironment:
             local_grid=local_grid,
             view_radius=radius,
             robot_pos=Position(row=r, col=c),
-            battery=round(self._battery, 2),
+            battery=self._battery,
             carrying_item=self._carrying_item,
             carrying_task_id=self._carrying_task_id,
             active_tasks=[t for t in visible_tasks if not t.completed],
@@ -350,7 +359,7 @@ class WarehouseEnvironment:
             grid_size=GRID_SIZE,
             difficulty=self._difficulty,
             robot_pos=Position(row=self._robot_pos[0], col=self._robot_pos[1]),
-            battery=round(self._battery, 2),
+            battery=self._battery,
             carrying_item=self._carrying_item,
             carrying_task_id=self._carrying_task_id,
             tasks=deepcopy(self._tasks),
@@ -359,7 +368,7 @@ class WarehouseEnvironment:
             max_steps=MAX_STEPS_MAP[self._difficulty],
             done=self._done,
             seed=self._seed,
-            total_reward=round(min(0.9999, max(0.0001, self._total_reward)), 4),
+            total_reward=finalize_score(min(0.9999, max(0.0001, self._total_reward))),
             completed_tasks=self._completed_tasks,
             total_tasks_spawned=self._total_tasks_spawned,
         )

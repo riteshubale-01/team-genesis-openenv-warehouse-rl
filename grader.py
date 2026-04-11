@@ -15,17 +15,26 @@ from typing import Dict, Any, List
 SCORE_EPSILON = 1e-6
 
 
-def clamp_open01(x):
+def finalize_score(x):
     try:
         x = float(x)
     except:
-        return SCORE_EPSILON
+        return 0.01
 
+    # Step 1: round to 2 decimals
+    x = round(x, 2)
+
+    # Step 2: enforce strict range
     if x <= 0:
-        return SCORE_EPSILON
+        return 0.01
     if x >= 1:
-        return 1 - SCORE_EPSILON
+        return 0.99
+
     return x
+
+
+def clamp_open01(x):
+    return finalize_score(x)
 
 
 def strict_open_score(x: float) -> float:
@@ -97,11 +106,11 @@ def compute_score(
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
     normalized_score = strict_open_score(total_raw * diff_mult)
-    normalized_score = clamp_open01(normalized_score)
+    normalized_score = finalize_score(normalized_score)
 
     return {
-        "score": normalized_score,
-        "task_score": clamp_open01(normalized_score),
+        "score": finalize_score(normalized_score),
+        "task_score": finalize_score(normalized_score),
     }
 
 

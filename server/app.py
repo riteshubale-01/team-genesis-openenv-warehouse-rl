@@ -31,17 +31,26 @@ from inference import run_baseline
 SCORE_EPSILON = 1e-6
 
 
-def clamp_open01(x):
+def finalize_score(x):
     try:
         x = float(x)
     except:
-        return SCORE_EPSILON
+        return 0.01
 
+    # Step 1: round to 2 decimals
+    x = round(x, 2)
+
+    # Step 2: enforce strict range
     if x <= 0:
-        return SCORE_EPSILON
+        return 0.01
     if x >= 1:
-        return 1 - SCORE_EPSILON
+        return 0.99
+
     return x
+
+
+def clamp_open01(x):
+    return finalize_score(x)
 
 app = FastAPI(
     title="Warehouse RL OpenEnv",
@@ -162,11 +171,11 @@ def run(seed: int = 42, difficulties: str = "easy,medium,hard"):
         tasks = payload.get("tasks", [])
         clean_tasks = []
         for task in tasks:
-            s = clamp_open01(task.get("score", SCORE_EPSILON))
+            s = finalize_score(task.get("score", SCORE_EPSILON))
             assert 0 < s < 1
             clean_tasks.append({"score": s, "task_score": s})
-        aggregate_score = clamp_open01(
-            (sum(t["score"] for t in clean_tasks) / len(clean_tasks)) if clean_tasks else 0.05
+        aggregate_score = finalize_score(
+            (sum(t["score"] for t in clean_tasks) / len(clean_tasks)) if clean_tasks else 0.01
         )
         assert 0 < aggregate_score < 1
         output = {"tasks": clean_tasks, "aggregate_score": aggregate_score}
