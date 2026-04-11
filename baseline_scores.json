@@ -1,17 +1,17 @@
 {
   "tasks": [
     {
-      "score": 0.47,
-      "task_score": 0.47
+      "score": 0.5,
+      "task_score": 0.5
     },
     {
-      "score": 0.52,
-      "task_score": 0.52
+      "score": 0.5,
+      "task_score": 0.5
     },
     {
-      "score": 0.57,
-      "task_score": 0.57
+      "score": 0.5,
+      "task_score": 0.5
     }
   ],
-  "aggregate_score": 0.52
+  "aggregate_score": 0.5
 }

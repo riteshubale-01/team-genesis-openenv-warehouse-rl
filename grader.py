@@ -9,6 +9,7 @@ Score is in (0, 1) based on:
 """
 
 from __future__ import annotations
+import math
 from typing import Dict, Any, List
 
 
@@ -119,26 +120,16 @@ def score_episode(episode_info_list: List[Dict[str, Any]], difficulty: str = "ea
     Each dict should be the `info` returned by env.step().
     """
     if not episode_info_list:
-        return compute_score(0, 0, 0, 150, 0, 100.0, False, difficulty)
+        normalized_score = 0.5
+        return {"score": normalized_score, "task_score": normalized_score}
 
     last = episode_info_list[-1]
-    completed_tasks = last.get("completed_tasks", 0)
-    total_tasks_spawned = last.get("total_tasks_spawned", 0)
-    total_steps = last.get("step_count", len(episode_info_list))
-    battery = last.get("battery", 100.0)
-    battery_depleted = any(i.get("battery_depleted", False) for i in episode_info_list)
-    collision_count = sum(1 for i in episode_info_list if i.get("collision_occurred", False))
+    # Prefer cumulative reward if present; otherwise reconstruct from per-step raw rewards.
+    if "total_reward_raw" in last:
+        raw_total = float(last.get("total_reward_raw", 0.0))
+    else:
+        raw_total = sum(float(i.get("reward_raw", 0.0)) for i in episode_info_list)
 
-    max_steps_map = {"easy": 150, "medium": 200, "hard": 250}
-    max_steps = max_steps_map.get(difficulty, 150)
-
-    return compute_score(
-        completed_tasks=completed_tasks,
-        total_tasks_spawned=total_tasks_spawned,
-        total_steps=total_steps,
-        max_steps=max_steps,
-        collision_count=collision_count,
-        battery_remaining=battery,
-        battery_depleted=battery_depleted,
-        difficulty=difficulty,
-    )
+    # Raw total reward -> smooth score in (0,1), centered near 0.5 for neutral episodes.
+    normalized_score = 1.0 / (1.0 + math.exp(-raw_total / 5.0))
+    return {"score": float(normalized_score), "task_score": float(normalized_score)}

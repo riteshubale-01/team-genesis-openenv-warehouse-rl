@@ -42,18 +42,20 @@ BATTERY_MAX     = 100.0
 RECHARGE_RATE   = 20.0   # % per recharge action
 
 # Reward constants
-R_TASK_COMPLETE    = 10.0
-R_PICKUP           = 2.0
-R_STEP_PENALTY     = -0.01
-R_COLLISION        = -2.0
-R_BATTERY_LOW      = -0.5   # when battery < 20%
-R_DEAD_BATTERY     = -5.0
-R_INVALID_ACTION   = -0.3
-R_PRIORITY_2       = 5.0    # bonus for high-priority task
-R_PRIORITY_3       = 10.0   # bonus for urgent task
-R_EFFICIENCY_BONUS = 2.0    # completing in fewer steps
-R_PROGRESS_TOWARD  = 0.1    # move closer to active objective
-R_PROGRESS_AWAY    = -0.1   # move farther from active objective
+R_TASK_COMPLETE    = 0.3
+R_PICKUP           = 0.3
+R_STEP_CORRECT     = 0.2
+R_STEP_WRONG       = -0.2
+R_PICKDROP_WRONG   = -0.3
+R_COLLISION        = -0.2
+R_BATTERY_LOW      = 0.0
+R_DEAD_BATTERY     = 0.0
+R_INVALID_ACTION   = R_STEP_WRONG
+R_PRIORITY_2       = 0.0
+R_PRIORITY_3       = 0.0
+R_EFFICIENCY_BONUS = 0.0
+R_PROGRESS_TOWARD  = 0.0
+R_PROGRESS_AWAY    = 0.0
 REWARD_EPSILON     = 1e-4
 CARRY_STEP_DECAY   = 0.0005
 
@@ -169,10 +171,6 @@ class WarehouseEnvironment:
         reward_obj = StepReward(total=0.0)
         info_obj   = StepInfo()
 
-        # Step penalty always
-        reward_obj.step_penalty = R_STEP_PENALTY
-        reward_obj.total += R_STEP_PENALTY
-
         # Battery low penalty
         if self._battery < 20.0:
             reward_obj.battery_penalty = R_BATTERY_LOW
@@ -200,7 +198,8 @@ class WarehouseEnvironment:
         elif action == ActionType.RECHARGE:
             self._execute_recharge(reward_obj, info_obj)
         elif action == ActionType.WAIT:
-            pass  # no-op
+            reward_obj.step_penalty += R_STEP_WRONG
+            reward_obj.total += R_STEP_WRONG
 
         if action in (ActionType.MOVE_UP, ActionType.MOVE_DOWN, ActionType.MOVE_LEFT, ActionType.MOVE_RIGHT):
             post_distance = manhattan(self._robot_pos, pre_goal) if pre_goal is not None else None
@@ -242,12 +241,8 @@ class WarehouseEnvironment:
 
         step_reward_raw = reward_obj.total
         step_reward = self._normalize_step_reward(step_reward_raw)
-        max_steps = MAX_STEPS_MAP[self._difficulty]
-        step_reward_scaled = step_reward / max_steps
-        if self._carrying_item:
-            self._total_reward -= CARRY_STEP_DECAY
-        else:
-            self._total_reward += step_reward_scaled
+        step_reward_scaled = step_reward
+        self._total_reward += step_reward_raw
         self._total_reward_raw += step_reward_raw
         total_reward_norm = self._total_reward
 
@@ -266,10 +261,10 @@ class WarehouseEnvironment:
         info_dict["completed_tasks"] = self._completed_tasks
         info_dict["total_tasks_spawned"] = self._total_tasks_spawned
 
-        return self.get_observation(), step_reward, self._done, info_dict
+        return self.get_observation(), step_reward_raw, self._done, info_dict
 
     def _normalize_step_reward(self, raw_reward: float) -> float:
-        """Map raw step reward into strict open interval (0, 1)."""
+        """Optional normalization helper retained for diagnostics only."""
         normalized = 1.0 / (1.0 + math.exp(-raw_reward / RAW_STEP_SCALE))
         return normalized
 
@@ -521,11 +516,12 @@ class WarehouseEnvironment:
             return
 
         self._robot_pos = (nr, nc)
+        reward.total += R_STEP_CORRECT
 
     def _execute_pick(self, reward: StepReward, info: StepInfo):
         if self._carrying_item:
-            reward.invalid_action_penalty += R_INVALID_ACTION
-            reward.total += R_INVALID_ACTION
+            reward.invalid_action_penalty += R_PICKDROP_WRONG
+            reward.total += R_PICKDROP_WRONG
             info.action_valid = False
             return
 
@@ -541,8 +537,8 @@ class WarehouseEnvironment:
                 break
 
         if target_task is None:
-            reward.invalid_action_penalty += R_INVALID_ACTION
-            reward.total += R_INVALID_ACTION
+            reward.invalid_action_penalty += R_PICKDROP_WRONG
+            reward.total += R_PICKDROP_WRONG
             info.action_valid = False
             return
 
@@ -555,8 +551,8 @@ class WarehouseEnvironment:
 
     def _execute_drop(self, reward: StepReward, info: StepInfo):
         if not self._carrying_item:
-            reward.invalid_action_penalty += R_INVALID_ACTION
-            reward.total += R_INVALID_ACTION
+            reward.invalid_action_penalty += R_PICKDROP_WRONG
+            reward.total += R_PICKDROP_WRONG
             info.action_valid = False
             return
 
@@ -598,14 +594,15 @@ class WarehouseEnvironment:
             info.dropped_off_item = True
         else:
             # Wrong location — penalise
-            reward.invalid_action_penalty += R_INVALID_ACTION
-            reward.total += R_INVALID_ACTION
+            reward.invalid_action_penalty += R_PICKDROP_WRONG
+            reward.total += R_PICKDROP_WRONG
             info.action_valid = False
 
     def _execute_recharge(self, reward: StepReward, info: StepInfo):
         r, c = self._robot_pos
         if (r, c) in self._charger_positions:
             self._battery = min(BATTERY_MAX, self._battery + RECHARGE_RATE)
+            reward.total += R_STEP_CORRECT
         else:
             reward.invalid_action_penalty += R_INVALID_ACTION
             reward.total += R_INVALID_ACTION
