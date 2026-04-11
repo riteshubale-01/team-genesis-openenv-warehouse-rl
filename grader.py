@@ -105,12 +105,11 @@ def compute_score(
     diff_mult = {"easy": 1.0, "medium": 1.1, "hard": 1.2}[difficulty]
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
-    normalized_score = strict_open_score(total_raw * diff_mult)
-    normalized_score = finalize_score(normalized_score)
+    normalized_score = total_raw * diff_mult
 
     return {
-        "score": finalize_score(normalized_score),
-        "task_score": finalize_score(normalized_score),
+        "score": normalized_score,
+        "task_score": normalized_score,
     }
 
 

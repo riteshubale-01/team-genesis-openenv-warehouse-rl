@@ -141,7 +141,7 @@ def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, floa
     """Final sanitizer that enforces exact validator payload schema and score bounds."""
     clean: List[Dict[str, float]] = []
     for task in tasks:
-        s = clamp_open01(task.get("score", SCORE_EPSILON))
+        s = finalize_score(task.get("score", SCORE_EPSILON))
 
         assert isinstance(s, float), f"Score must be float, got: {type(s)}"
         assert 0 < s < 1, f"Invalid score: {s}"
@@ -338,7 +338,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             try:
                 step_data = env_step(action)
                 obs = step_data.get("observation", {})
-                reward = finalize_score(step_data.get("reward", 0.01))
+                reward = float(step_data.get("reward", 0.0))
                 done = bool(step_data.get("done", False))
                 info = step_data.get("info", {}) or {}
                 rewards.append(reward)
@@ -348,7 +348,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
                 if info_error:
                     step_error = str(info_error)
             except Exception as e:
-                reward = finalize_score(0.01)
+                reward = 0.0
                 done = True
                 rewards.append(reward)
                 step_error = sanitize_error(e)
@@ -359,12 +359,12 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             )
 
         graded = score_episode(step_infos, difficulty=difficulty)
-        safe_score = finalize_score(graded.get("score", SCORE_EPSILON))
+        safe_score = float(graded.get("score", SCORE_EPSILON))
         success = safe_score > 0.0
 
     except Exception:
         graded = score_episode([], difficulty=difficulty)
-        safe_score = finalize_score(graded.get("score", SCORE_EPSILON))
+        safe_score = float(graded.get("score", SCORE_EPSILON))
     finally:
         rewards_str = ",".join(str(r) for r in rewards)
         print(
@@ -373,7 +373,6 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
         )
 
     assert isinstance(safe_score, float), f"Score must be float, got: {type(safe_score)}"
-    assert 0 < safe_score < 1, f"Invalid score from grader: {safe_score}"
     return {"score": safe_score}
 
 
@@ -384,18 +383,10 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
         episode_result = run_episode(client=client, difficulty=difficulty, seed=seed)
         results.append(episode_result)
 
-    tasks = enforce_strict(results).get("tasks", [])
-    for t in tasks:
-        t["score"] = finalize_score(t.get("score", SCORE_EPSILON))
-        t["task_score"] = finalize_score(t.get("task_score", t["score"]))
-        # Force strict equality required by validators.
-        t["task_score"] = t["score"]
-
-    output: Dict[str, Any] = {}
-    output["tasks"] = tasks
-
-    aggregate_raw = (sum(t["score"] for t in tasks) / len(tasks)) if tasks else 0.01
-    output["aggregate_score"] = finalize_score(aggregate_raw)
+    output = enforce_strict(results)
+    output["aggregate_score"] = finalize_score(
+        (sum(t["score"] for t in output["tasks"]) / len(output["tasks"])) if output["tasks"] else SCORE_EPSILON
+    )
 
     task_scores = [t["score"] for t in output["tasks"]]
     aggregate_score = output["aggregate_score"]

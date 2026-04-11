@@ -167,21 +167,7 @@ def run(seed: int = 42, difficulties: str = "easy,medium,hard"):
         allowed = {"easy", "medium", "hard"}
         if not diffs or any(d not in allowed for d in diffs):
             raise ValueError("difficulties must be a comma-separated subset of easy,medium,hard")
-        payload = run_baseline(difficulties=diffs, seed=int(seed), output_json="baseline_scores.json")
-        tasks = payload.get("tasks", [])
-        clean_tasks = []
-        for task in tasks:
-            s = finalize_score(task.get("score", SCORE_EPSILON))
-            assert 0 < s < 1
-            clean_tasks.append({"score": s, "task_score": s})
-        aggregate_score = finalize_score(
-            (sum(t["score"] for t in clean_tasks) / len(clean_tasks)) if clean_tasks else 0.01
-        )
-        assert 0 < aggregate_score < 1
-        output = {"tasks": clean_tasks, "aggregate_score": aggregate_score}
-        assert all(0 < t["score"] < 1 for t in output["tasks"]), "Invalid task score detected"
-        assert 0 < output["aggregate_score"] < 1, "Invalid aggregate score"
-        return output
+        return run_baseline(difficulties=diffs, seed=int(seed), output_json="baseline_scores.json")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
