@@ -15,13 +15,21 @@ from typing import Dict, Any, List
 SCORE_EPSILON = 1e-6
 
 
-def strict_open_score(x: float) -> float:
-    x = float(x)
+def clamp_open01(x):
+    try:
+        x = float(x)
+    except:
+        return SCORE_EPSILON
+
     if x <= 0:
         return SCORE_EPSILON
     if x >= 1:
         return 1 - SCORE_EPSILON
     return x
+
+
+def strict_open_score(x: float) -> float:
+    return clamp_open01(x)
 
 
 def compute_score(
@@ -52,8 +60,6 @@ def compute_score(
     -------
     dict with 'score' (float strictly between 0 and 1) and component breakdown
     """
-    eps = SCORE_EPSILON
-
     # ── Task completion (40%) ──────────────────────
     if total_tasks_spawned == 0:
         completion_ratio = 0.0
@@ -91,10 +97,11 @@ def compute_score(
 
     total_raw = completion_score + efficiency_score + safety_score + battery_score
     normalized_score = strict_open_score(total_raw * diff_mult)
+    normalized_score = clamp_open01(normalized_score)
 
     return {
         "score": normalized_score,
-        "task_score": normalized_score,
+        "task_score": clamp_open01(normalized_score),
     }
 
 

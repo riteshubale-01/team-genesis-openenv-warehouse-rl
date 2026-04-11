@@ -57,6 +57,8 @@ R_PROGRESS_AWAY    = -0.1   # move farther from active objective
 REWARD_EPSILON     = 1e-4
 CARRY_STEP_DECAY   = 0.0005
 
+SCORE_EPSILON = 1e-6
+
 RAW_STEP_SCALE = 2.5
 RAW_TOTAL_SCALE = 120.0
 
@@ -72,18 +74,21 @@ def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
-def strict_open_score(x: float) -> float:
-    x = float(x)
+def clamp_open01(x):
+    try:
+        x = float(x)
+    except:
+        return SCORE_EPSILON
+
     if x <= 0:
-        x = REWARD_EPSILON
+        return SCORE_EPSILON
     if x >= 1:
-        x = 1 - REWARD_EPSILON
-    x = round(x, 4)
-    if x <= 0:
-        return REWARD_EPSILON
-    if x >= 1:
-        return 1 - REWARD_EPSILON
+        return 1 - SCORE_EPSILON
     return x
+
+
+def strict_open_score(x: float) -> float:
+    return clamp_open01(x)
 
 
 # ─────────────────────────────────────────
