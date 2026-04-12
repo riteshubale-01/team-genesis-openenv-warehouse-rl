@@ -52,6 +52,29 @@ def convert_reward_to_score(raw_reward: float, max_possible_reward: float) -> fl
     return final_score
 
 
+def format_task_score(score: float) -> Dict[str, float]:
+    """Format a single task score payload with validator-safe bounds."""
+    safe = convert_reward_to_score(score, 1.0)
+    return {
+        "score": safe,
+        "task_score": safe,
+    }
+
+
+def format_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Format full tasks payload, including aggregate_score, via one conversion path."""
+    clean_tasks = [format_task_score(float(t.get("score", SCORE_EPSILON))) for t in tasks]
+    if clean_tasks:
+        aggregate_raw = sum(t["score"] for t in clean_tasks) / len(clean_tasks)
+    else:
+        aggregate_raw = SCORE_EPSILON
+    aggregate_score = convert_reward_to_score(aggregate_raw, 1.0)
+    return {
+        "tasks": clean_tasks,
+        "aggregate_score": aggregate_score,
+    }
+
+
 def max_possible_reward_for_difficulty(difficulty: str) -> float:
     """Conservative max-reward estimate used for final score conversion."""
     diff = difficulty if difficulty in MAX_STEPS_MAP else "easy"
@@ -60,19 +83,6 @@ def max_possible_reward_for_difficulty(difficulty: str) -> float:
 
     # Upper bound from always-correct movement and completing all possible tasks.
     return (max_steps * R_STEP_CORRECT) + (max_tasks * (R_PICKUP + R_TASK_COMPLETE))
-
-
-def finalize_score(x: float) -> float:
-    """Backward-compatible helper for already-normalized scores."""
-    return convert_reward_to_score(x, 1.0)
-
-
-def clamp_open01(x: float) -> float:
-    return finalize_score(x)
-
-
-def strict_open_score(x: float) -> float:
-    return finalize_score(x)
 
 
 def compute_score(

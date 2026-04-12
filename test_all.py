@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 from warehouse_env.models import ActionType, CellType, Position, Task, ResetRequest, StepRequest
 from environment import WarehouseEnvironment, GRID_SIZE
-from grader import compute_score, convert_reward_to_score, score_episode
+from grader import compute_score, score_episode
 
 
 # ─────────────────────────────────────────
@@ -246,10 +246,14 @@ class TestFullState:
 
 class TestGrader:
     def test_conversion_edge_clamps(self):
-        assert convert_reward_to_score(-10.0, 100.0) == 0.01
-        assert convert_reward_to_score(0.0, 100.0) == 0.01
-        assert convert_reward_to_score(100.0, 100.0) == 0.99
-        assert convert_reward_to_score(250.0, 100.0) == 0.99
+        low = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=-10.0, max_possible_reward=100.0)
+        zero = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=0.0, max_possible_reward=100.0)
+        at_top = compute_score(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=100.0, max_possible_reward=100.0)
+        above = compute_score(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=250.0, max_possible_reward=100.0)
+        assert low["score"] == 0.01
+        assert zero["score"] == 0.01
+        assert at_top["score"] == 0.99
+        assert above["score"] == 0.99
 
     def test_perfect_score(self):
         result = compute_score(

@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 import requests
 from openai import OpenAI
 
-from grader import convert_reward_to_score, score_episode
+from grader import format_tasks_payload, score_episode
 
 # ─────────────────────────────────────────
 # Config
@@ -50,10 +50,6 @@ ACTION_NAMES = {
     7: "WAIT",
 }
 
-
-def finalize_score(x: float) -> float:
-    # For already-normalized inputs, convert with max_possible_reward=1.0.
-    return convert_reward_to_score(x, 1.0)
 
 # ─────────────────────────────────────────
 # OpenAI client helpers
@@ -120,19 +116,9 @@ def parse_action(raw: str) -> int:
     return 7  # WAIT as fallback
 
 
-def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, float]]]:
-    """Final sanitizer that enforces exact validator payload schema and score bounds."""
-    clean: List[Dict[str, float]] = []
-    for task in tasks:
-        s = finalize_score(task.get("score", SCORE_EPSILON))
-
-        assert isinstance(s, float), f"Score must be float, got: {type(s)}"
-        assert 0 < s < 1, f"Invalid score: {s}"
-        clean.append({
-            "score": s,
-            "task_score": s,
-        })
-    return {"tasks": clean}
+def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build strict payload using grader-owned score formatting only."""
+    return format_tasks_payload(tasks)
 
 
 # ─────────────────────────────────────────
@@ -367,15 +353,12 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
         results.append(episode_result)
 
     output = enforce_strict(results)
-    output["aggregate_score"] = finalize_score(
-        (sum(t["score"] for t in output["tasks"]) / len(output["tasks"])) if output["tasks"] else SCORE_EPSILON
-    )
 
     task_scores = [t["score"] for t in output["tasks"]]
     aggregate_score = output["aggregate_score"]
-    assert 0 < aggregate_score < 1, f"Invalid aggregate score: {aggregate_score}"
-    assert all(0 < t["score"] < 1 for t in output["tasks"]), "Invalid task score detected"
-    assert 0 < output["aggregate_score"] < 1, "Invalid aggregate score"
+    assert 0.01 <= aggregate_score <= 0.99, f"Invalid aggregate score: {aggregate_score}"
+    assert all(0.01 <= t["score"] <= 0.99 for t in output["tasks"]), "Invalid task score detected"
+    assert 0.01 <= output["aggregate_score"] <= 0.99, "Invalid aggregate score"
 
     print("TASK SCORES:", task_scores)
     print("AGG SCORE:", output["aggregate_score"])
