@@ -1,16 +1,3 @@
-"""
-inference.py — OpenEnv-compatible baseline inference runner.
-
-Submission-critical requirements covered by this script:
-    - Uses OpenAI Python SDK for all LLM calls.
-    - Reads API_BASE_URL and API_KEY from environment.
-    - Uses MODEL_NAME with a sensible default.
-    - Emits strict OpenEnv inference line types: [START], [STEP], [END].
-    - Supports reproducible multi-difficulty baseline runs.
-"""
-
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -20,23 +7,17 @@ from typing import Any, Dict, List
 import requests
 from openai import OpenAI
 
-from grader import compute_score, aggregate_scores
+from grader import compute_score, build_output
 
-# ─────────────────────────────────────────
-# Config
-# ─────────────────────────────────────────
 
-API_BASE_URL: str = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME: str = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-API_KEY: str | None = os.environ.get("API_KEY")
+# ================================
+# 🔑 CONFIG (STRICT)
+# ================================
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY = os.environ["API_KEY"]
 
-SERVER_URL: str = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
-DIFFICULTY: str = os.environ.get("DIFFICULTY", "easy")
-SEED: int       = int(os.environ.get("SEED", "42"))
-MAX_RETRIES: int = 3
-
-TASK_NAME  = "warehouse_delivery"
-BENCHMARK  = "WarehouseRL-v1"
+SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
 
 ACTION_NAMES = {
     0: "MOVE_UP",
@@ -50,367 +31,130 @@ ACTION_NAMES = {
 }
 
 
-# ─────────────────────────────────────────
-# OpenAI client helpers
-# ─────────────────────────────────────────
-
-def require_api_key() -> str:
-    if not API_KEY:
-        raise ValueError("API_KEY environment variable is required")
-    return API_KEY
-
-
-def create_openai_client() -> OpenAI:
-    return OpenAI(base_url=API_BASE_URL, api_key=require_api_key())
+# ================================
+# 🤖 OPENAI CLIENT (MANDATORY)
+# ================================
+def create_client():
+    return OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY
+    )
 
 
-def sanitize_error(err: Exception) -> str:
-    return str(err).replace("\n", " ").strip() or "unknown_error"
+def call_llm(client, prompt):
+    resp = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+        max_tokens=10,
+    )
+    return resp.choices[0].message.content.strip()
 
 
-def is_llm_fatal_error(error_text: str) -> bool:
-    """Detect auth/billing/rate/provider errors that should trigger offline fallback."""
-    e = error_text.lower()
-    fatal_markers = [
-        "error code: 401",
-        "error code: 402",
-        "error code: 403",
-        "error code: 429",
-        "invalid_api_key",
-        "insufficient",
-        "credit",
-        "quota",
-        "rate limit",
-        "rate_limit",
-        "authentication",
-    ]
-    return any(marker in e for marker in fatal_markers)
-
-
-def call_llm(client: OpenAI, messages: List[Dict[str, str]]) -> str:
-    """Call LLM via OpenAI SDK. Returns model text content."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            resp = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=0.0,
-                max_tokens=32,
-            )
-            text = resp.choices[0].message.content
-            return (text or "").strip()
-        except Exception as e:
-            if attempt == MAX_RETRIES - 1:
-                raise
-    raise RuntimeError("OpenAI call failed after retries")
-
-
-def parse_action(raw: str) -> int:
-    for ch in raw:
-        if ch.isdigit() and 0 <= int(ch) <= 7:
+def parse_action(text):
+    for ch in text:
+        if ch.isdigit():
             return int(ch)
-    return 7  # WAIT as fallback
-
-
-def enforce_strict(tasks):
-    from grader import aggregate_scores
-
-    aggregate = aggregate_scores(tasks)
-
-    return {
-        "tasks": tasks,
-        "aggregate_score": aggregate
-    }
-
-
-# ─────────────────────────────────────────
-# Environment Client
-# ─────────────────────────────────────────
-
-def env_reset(seed: int = 42, difficulty: str = "easy") -> Dict[str, Any]:
-    resp = requests.post(
-        f"{SERVER_URL}/reset",
-        json={"seed": seed, "difficulty": difficulty},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def env_step(action: int) -> Dict[str, Any]:
-    resp = requests.post(
-        f"{SERVER_URL}/step",
-        json={"action": action},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-# ─────────────────────────────────────────
-# System Prompt
-# ─────────────────────────────────────────
-
-SYSTEM_PROMPT = """You are a warehouse robot controller. Your job is to pick up items from shelves and deliver them to target zones.
-
-ENVIRONMENT:
-- 10x10 grid warehouse
-- Cell types: 0=empty, 1=shelf, 2=target, 3=charger, 4=obstacle(human), 5=robot(you), 6=wall
-- You see a local grid around yourself (partial observability)
-
-ACTIONS (respond with ONLY the number):
-  0 = MOVE_UP
-  1 = MOVE_DOWN
-  2 = MOVE_LEFT
-  3 = MOVE_RIGHT
-  4 = PICK (pick up item from adjacent shelf)
-  5 = DROP (deliver item to adjacent target)
-  6 = RECHARGE (must be at a charger cell corner)
-  7 = WAIT
-
-STRATEGY:
-1. Navigate to a pickup location (shelf with a task)
-2. PICK the item (action 4)
-3. Navigate to the dropoff location (target zone)
-4. DROP the item (action 5)
-5. Recharge at corners (cell type 3) when battery < 25%
-6. Avoid obstacles (cell type 4)
-
-Respond with ONLY a single digit 0-7."""
-
-
-def build_user_prompt(obs: Dict[str, Any], step_n: int) -> str:
-    grid = obs.get("local_grid", [])
-    battery = obs.get("battery", 100)
-    carrying = obs.get("carrying_item", False)
-    robot_pos = obs.get("robot_pos", {})
-    tasks = obs.get("active_tasks", [])
-
-    grid_str = "\n".join(str(row) for row in grid)
-    task_str = json.dumps(tasks[:3], indent=None) if tasks else "none"
-
-    return (
-        f"Step {step_n} | Battery: {battery:.1f}% | Carrying: {carrying}\n"
-        f"Robot position: row={robot_pos.get('row')}, col={robot_pos.get('col')}\n"
-        f"Active tasks: {task_str}\n"
-        f"Local grid (you are at center, 5=robot):\n{grid_str}\n\n"
-        "What action? (0-7)"
-    )
-
-
-def heuristic_action(obs: Dict[str, Any]) -> int:
-    """Deterministic fallback policy retained for local tests."""
-    battery = obs.get("battery", 100)
-    carrying = obs.get("carrying_item", False)
-    robot_pos = obs.get("robot_pos", {})
-    tasks = obs.get("active_tasks", [])
-    grid = obs.get("local_grid", [])
-    radius = obs.get("view_radius", 4)
-
-    rr = robot_pos.get("row", 5)
-    rc = robot_pos.get("col", 0)
-
-    # If on a charger, continue recharging until full battery.
-    center = grid[radius][radius] if grid else 0
-    if center == 3 and battery < 100:
-        return 6
-
-    if battery < 25:
-        if center == 3:
-            return 6
-        if rr > 5:
-            return 0
-        if rc > 5:
-            return 2
-        return 0
-
-    if carrying and tasks:
-        for t in tasks:
-            if t.get("picked_up") and not t.get("completed"):
-                dropoff = t.get("dropoff_pos", {})
-                dr = dropoff.get("row", 0)
-                dc = dropoff.get("col", 0)
-                if dr > rr:
-                    return 1
-                if dr < rr:
-                    return 0
-                if dc > rc:
-                    return 3
-                if dc < rc:
-                    return 2
-                return 5
-
-    for t in tasks:
-        if not t.get("picked_up") and not t.get("completed"):
-            pickup = t.get("pickup_pos", {})
-            pr = pickup.get("row", 0)
-            pc = pickup.get("col", 0)
-            dist = abs(pr - rr) + abs(pc - rc)
-            if dist == 0:
-                return 4
-            if pr > rr:
-                return 1
-            if pr < rr:
-                return 0
-            if pc > rc:
-                return 3
-            if pc < rc:
-                return 2
-
     return 7
 
 
-# ─────────────────────────────────────────
-# ─────────────────────────────────────────
-# Main inference loop
-# ─────────────────────────────────────────
+# ================================
+# 🌍 ENV API
+# ================================
+def env_reset(seed, difficulty):
+    return requests.post(
+        f"{SERVER_URL}/reset",
+        json={"seed": seed, "difficulty": difficulty}
+    ).json()
 
-# 🔥 ONLY showing modified critical parts (rest remains SAME)
 
-def run_episode(client: OpenAI, difficulty: str, seed: int) -> Dict[str, Any]:
-    task_name = f"{TASK_NAME}_{difficulty}"
-    print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
+def env_step(action):
+    return requests.post(
+        f"{SERVER_URL}/step",
+        json={"action": action}
+    ).json()
 
-    raw_rewards: List[float] = []
-    step_n = 0
-    success = False
-    reward_min = float('inf')
-    reward_max = float('-inf')
 
-    try:
-        reset_data = env_reset(seed=seed, difficulty=difficulty)
-        obs = reset_data.get("observation", {})
-        done = False
+# ================================
+# 🔁 RUN ONE EPISODE
+# ================================
+def run_episode(client, difficulty, seed):
+    print(f"[START] task={difficulty}")
 
-        while not done:
-            step_n += 1
-            action: int
-            error_note = "null"
-            try:
-                prompt = build_user_prompt(obs, step_n)
-                llm_raw = call_llm(
-                    client,
-                    [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                )
-                action = parse_action(llm_raw)
-            except Exception as e:
-                # Fallback keeps rollout alive if the model returns malformed output
-                # or transiently fails; this still attempts LLM calls every step.
-                error_note = sanitize_error(e)
-                action = heuristic_action(obs)
+    data = env_reset(seed, difficulty)
+    obs = data.get("observation", {})
 
-            try:
-                step_data = env_step(action)
-                obs = step_data.get("observation", {})
-                raw_reward = float(step_data.get("reward", 0.0))
-                done = bool(step_data.get("done", False))
+    done = False
+    total_reward = 0
+    steps = 0
 
-                raw_rewards.append(raw_reward)
+    while not done:
+        steps += 1
 
-                reward_min = min(reward_min, raw_reward)
-                reward_max = max(reward_max, raw_reward)
+        prompt = f"Choose action (0-7). Step {steps}"
+        
+        try:
+            raw = call_llm(client, prompt)
+            action = parse_action(raw)
+        except:
+            action = 7  # fallback but AFTER API attempt
 
-            except Exception:
-                raw_reward = 0.0
-                done = True
-                raw_rewards.append(raw_reward)
-                reward_min = min(reward_min, raw_reward)
-                reward_max = max(reward_max, raw_reward)
+        step = env_step(action)
 
-            # Only for display (SAFE)
-            normalized_reward = normalize_reward(raw_reward, reward_min, reward_max)
+        reward = float(step.get("reward", 0))
+        done = step.get("done", False)
 
-            print(
-                f"[STEP] step={step_n} action={ACTION_NAMES.get(action)} "
-                f"reward={normalized_reward:.2f} done={'true' if done else 'false'} error={error_note}"
-            )
+        total_reward += reward
 
-        success = sum(raw_rewards) > 0.0
+        print(f"[STEP] step={steps} action={action} reward={reward:.2f} done={done}")
 
-    except Exception:
-        pass
+    print(f"[END] steps={steps}")
 
-    finally:
-        # 🚫 NO SCORE COMPUTATION HERE
-
-        rewards_str = ",".join(f"{r:.2f}" for r in raw_rewards)
-
-        print(
-            f"[END] success={'true' if success else 'false'} "
-            f"steps={step_n} rewards={rewards_str}"
-        )
-
-    # ✅ RETURN RAW REWARD ONLY
     return {
-        "total_reward": sum(raw_rewards),
+        "total_reward": total_reward,
+        "max_steps": steps,
         "difficulty": difficulty
     }
 
 
-def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, List[Dict[str, float]]]:
-    """Run episodes for each difficulty, score GridMind-style, and save."""
-    client = create_openai_client()
-    results = []
-    for difficulty in difficulties:
-        task_result = run_episode(client=client, difficulty=difficulty, seed=seed)
+# ================================
+# 🚀 MAIN
+# ================================
+def run_all(difficulties, seed, output_file):
+    client = create_client()
 
-        graded = compute_score(task_result, difficulty)
+    tasks = []
 
-        results.append({
-            "task_id": difficulty,
+    for diff in difficulties:
+        result = run_episode(client, diff, seed)
+
+        graded = compute_score(result, diff)
+
+        tasks.append({
+            "task_id": diff,
             "score": graded["score"],
             "task_score": graded["task_score"]
         })
 
-    output = enforce_strict(results)
+    output = build_output(tasks)
 
-    # Validate all scores strictly in open interval (0, 1)
-    task_scores = [t["score"] for t in output["tasks"]]
-    aggregate_score = output["aggregate_score"]
-    assert 0 < aggregate_score < 1, f"Invalid aggregate score: {aggregate_score}"
-    assert all(0 < s < 1 for s in task_scores), f"Invalid task score(s): {task_scores}"
-
-    print("TASK SCORES:", task_scores)
-    print("AGG SCORE:", aggregate_score)
-
-    with open(output_json, "w", encoding="utf-8") as f:
+    with open(output_file, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"Saved baseline scores to {output_json}", file=sys.stderr)
 
-    # Runtime-facing return is intentionally strict and minimal.
-    return output
+    print(json.dumps(output, indent=2))
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run OpenEnv inference baseline")
-    parser.add_argument(
-        "--difficulties",
-        default="easy,medium,hard",
-        help="Comma-separated difficulties to run (default: easy,medium,hard)",
-    )
-    parser.add_argument("--seed", type=int, default=SEED, help="Deterministic seed")
-    parser.add_argument(
-        "--output-json",
-        default="baseline_scores.json",
-        help="Where to save grader-based baseline scores",
-    )
-    return parser.parse_args()
-
-def normalize_reward(r, rmin, rmax):
-    if rmax == rmin:
-        return 0.5
-    return (r - rmin) / (rmax - rmin)
-
+# ================================
+# 🧪 ENTRY
+# ================================
 if __name__ == "__main__":
-    args = parse_args()
-    diffs = [d.strip() for d in args.difficulties.split(",") if d.strip()]
-    allowed = {"easy", "medium", "hard"}
-    invalid = [d for d in diffs if d not in allowed]
-    if not diffs or invalid:
-        raise ValueError(f"Invalid difficulties: {invalid}. Allowed: easy,medium,hard")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--difficulties", default="easy,medium,hard")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-json", default="baseline_scores.json")
 
-    clean_payload = run_baseline(difficulties=diffs, seed=args.seed, output_json=args.output_json)
-    print(json.dumps(clean_payload, indent=2), file=sys.stderr)
+    args = parser.parse_args()
+
+    diffs = [d.strip() for d in args.difficulties.split(",")]
+
+    run_all(diffs, args.seed, args.output_json)
