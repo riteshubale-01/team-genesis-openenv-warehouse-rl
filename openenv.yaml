@@ -89,8 +89,8 @@ inference:
   script: inference.py
   env_vars:
     - API_BASE_URL
+    - API_KEY
     - MODEL_NAME
-    - HF_TOKEN
   output_format: openenv_v1
 
 docker:

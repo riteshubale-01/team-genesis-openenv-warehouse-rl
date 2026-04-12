@@ -118,7 +118,7 @@ uvicorn app:app --host 0.0.0.0 --port 7860
 # Run tests
 python -m pytest -v test_all.py
 
-# Run inference baseline (requires HF_TOKEN)
+# Run inference baseline (requires API_KEY and API_BASE_URL)
 python inference.py --difficulties easy,medium,hard --seed 42 --output-json baseline_scores.json
 ```
 
@@ -183,7 +183,7 @@ This project uses the OpenAI Python SDK (`openai`) for all LLM calls in `inferen
 |---------------|------------------------------------|
 | `API_BASE_URL`| OpenAI-compatible API base URL (default: `https://api.openai.com/v1`) |
 | `MODEL_NAME`  | Model identifier (default: `gpt-4o-mini`) |
-| `HF_TOKEN`    | Bearer token for authentication (required) |
+| `API_KEY`     | Bearer token for authentication (required) |
 | `ENV_SERVER_URL` | Environment server URL          |
 | `SEED`        | Random seed for determinism        |
 
@@ -200,7 +200,8 @@ This project uses the OpenAI Python SDK (`openai`) for all LLM calls in `inferen
 ### Reproducible Baseline Run
 
 ```bash
-set HF_TOKEN=your_token_here
+set API_BASE_URL=https://your-litellm-proxy/v1
+set API_KEY=your_proxy_key_here
 python inference.py --difficulties easy,medium,hard --seed 42 --output-json baseline_scores.json
 ```
 

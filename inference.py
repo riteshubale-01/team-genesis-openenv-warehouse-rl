@@ -3,8 +3,8 @@ inference.py — OpenEnv-compatible baseline inference runner.
 
 Submission-critical requirements covered by this script:
     - Uses OpenAI Python SDK for all LLM calls.
-    - Reads API_BASE_URL and MODEL_NAME with defaults.
-    - Requires HF_TOKEN (no default fallback).
+    - Reads API_BASE_URL and API_KEY from environment.
+    - Uses MODEL_NAME with a sensible default.
     - Emits strict OpenEnv inference line types: [START], [STEP], [END].
     - Supports reproducible multi-difficulty baseline runs.
 """
@@ -28,7 +28,7 @@ from grader import compute_score, aggregate_scores
 
 API_BASE_URL: str = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME: str = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-HF_TOKEN: str | None = os.environ.get("HF_TOKEN")
+API_KEY: str | None = os.environ.get("API_KEY")
 
 SERVER_URL: str = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 DIFFICULTY: str = os.environ.get("DIFFICULTY", "easy")
@@ -54,17 +54,14 @@ ACTION_NAMES = {
 # OpenAI client helpers
 # ─────────────────────────────────────────
 
-def require_hf_token() -> str:
-    if not HF_TOKEN:
-        raise ValueError("HF_TOKEN environment variable is required")
-    return HF_TOKEN
+def require_api_key() -> str:
+    if not API_KEY:
+        raise ValueError("API_KEY environment variable is required")
+    return API_KEY
 
 
-def create_openai_client() -> OpenAI | None:
-    # Allow baseline execution without secrets by using heuristic fallback only.
-    if not HF_TOKEN:
-        return None
-    return OpenAI(base_url=API_BASE_URL, api_key=require_hf_token())
+def create_openai_client() -> OpenAI:
+    return OpenAI(base_url=API_BASE_URL, api_key=require_api_key())
 
 
 def sanitize_error(err: Exception) -> str:
@@ -270,15 +267,13 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
 
 # 🔥 ONLY showing modified critical parts (rest remains SAME)
 
-def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, Any]:
+def run_episode(client: OpenAI, difficulty: str, seed: int) -> Dict[str, Any]:
     task_name = f"{TASK_NAME}_{difficulty}"
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
     raw_rewards: List[float] = []
     step_n = 0
     success = False
-    use_heuristic_fallback = client is None
-
     reward_min = float('inf')
     reward_max = float('-inf')
 
@@ -289,7 +284,23 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
 
         while not done:
             step_n += 1
-            action = heuristic_action(obs)
+            action: int
+            error_note = "null"
+            try:
+                prompt = build_user_prompt(obs, step_n)
+                llm_raw = call_llm(
+                    client,
+                    [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                action = parse_action(llm_raw)
+            except Exception as e:
+                # Fallback keeps rollout alive if the model returns malformed output
+                # or transiently fails; this still attempts LLM calls every step.
+                error_note = sanitize_error(e)
+                action = heuristic_action(obs)
 
             try:
                 step_data = env_step(action)
@@ -314,7 +325,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
 
             print(
                 f"[STEP] step={step_n} action={ACTION_NAMES.get(action)} "
-                f"reward={normalized_reward:.2f} done={'true' if done else 'false'} error=null"
+                f"reward={normalized_reward:.2f} done={'true' if done else 'false'} error={error_note}"
             )
 
         success = sum(raw_rewards) > 0.0
