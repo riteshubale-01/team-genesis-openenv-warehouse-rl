@@ -13,8 +13,8 @@ from grader import compute_score, build_output
 # ================================
 # 🔑 CONFIG (STRICT)
 # ================================
-API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+API_KEY = os.environ.get("API_KEY")
 
 SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
@@ -36,7 +36,7 @@ ACTION_NAMES = {
 # ================================
 def create_client():
     if not API_KEY:
-        return None
+        raise ValueError("API_KEY environment variable is required for inference")
     return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
 
@@ -119,7 +119,7 @@ def run_episode(client, difficulty, seed):
 # ================================
 # 🚀 MAIN
 # ================================
-def run_all(difficulties, seed, output_file):
+def run_baseline(difficulties, seed, output_json):
     client = create_client()
 
     tasks = []
@@ -137,10 +137,15 @@ def run_all(difficulties, seed, output_file):
 
     output = build_output(tasks)
 
-    with open(output_file, "w") as f:
+    with open(output_json, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
     print(json.dumps(output, indent=2))
+    return output
+
+
+def run_all(difficulties, seed, output_file):
+    return run_baseline(difficulties=difficulties, seed=seed, output_json=output_file)
 
 
 # ================================
