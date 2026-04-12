@@ -14,7 +14,6 @@ Implements:
 from __future__ import annotations
 
 import random
-import math
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -56,13 +55,7 @@ R_PRIORITY_3       = 0.0
 R_EFFICIENCY_BONUS = 0.0
 R_PROGRESS_TOWARD  = 0.0
 R_PROGRESS_AWAY    = 0.0
-REWARD_EPSILON     = 1e-4
 CARRY_STEP_DECAY   = 0.0005
-
-SCORE_EPSILON = 1e-6
-
-RAW_STEP_SCALE = 2.5
-RAW_TOTAL_SCALE = 120.0
 
 
 # ─────────────────────────────────────────
@@ -74,32 +67,6 @@ DIRECTION_DELTAS = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}  # up/down/lef
 
 def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-
-def finalize_score(x):
-    try:
-        x = float(x)
-    except:
-        return 0.01
-
-    # Step 1: round to 2 decimals
-    x = round(x, 2)
-
-    # Step 2: enforce strict range
-    if x <= 0:
-        return 0.01
-    if x >= 1:
-        return 0.99
-
-    return x
-
-
-def clamp_open01(x):
-    return finalize_score(x)
-
-
-def strict_open_score(x: float) -> float:
-    return clamp_open01(x)
 
 
 # ─────────────────────────────────────────
@@ -166,7 +133,7 @@ class WarehouseEnvironment:
             raise RuntimeError("Call reset() before step()")
         if self._done:
             obs = self.get_observation()
-            return obs, REWARD_EPSILON, True, {"reason": "episode_already_done"}
+            return obs, 0.0, True, {"reason": "episode_already_done"}
 
         reward_obj = StepReward(total=0.0)
         info_obj   = StepInfo()
@@ -240,21 +207,16 @@ class WarehouseEnvironment:
                 info_obj.reason = "all_tasks_completed"
 
         step_reward_raw = reward_obj.total
-        step_reward = self._normalize_step_reward(step_reward_raw)
-        step_reward_scaled = step_reward
         self._total_reward += step_reward_raw
         self._total_reward_raw += step_reward_raw
-        total_reward_norm = self._total_reward
-
-        print(f"step_reward={step_reward}, total_reward={total_reward_norm}")
+        total_reward_raw = self._total_reward
 
         info_dict: Dict[str, Any] = info_obj.model_dump()
         info_dict["reward_breakdown"] = reward_obj.model_dump()
-        info_dict["step_reward"] = step_reward
-        info_dict["step_reward_scaled"] = step_reward_scaled
+        info_dict["step_reward"] = step_reward_raw
         info_dict["carry_decay"] = CARRY_STEP_DECAY if self._carrying_item else 0.0
         info_dict["reward_raw"] = step_reward_raw
-        info_dict["total_reward"] = total_reward_norm
+        info_dict["total_reward"] = total_reward_raw
         info_dict["total_reward_raw"] = self._total_reward_raw
         info_dict["step_count"] = self._step_count
         info_dict["battery"] = self._battery
@@ -262,16 +224,6 @@ class WarehouseEnvironment:
         info_dict["total_tasks_spawned"] = self._total_tasks_spawned
 
         return self.get_observation(), step_reward_raw, self._done, info_dict
-
-    def _normalize_step_reward(self, raw_reward: float) -> float:
-        """Optional normalization helper retained for diagnostics only."""
-        normalized = 1.0 / (1.0 + math.exp(-raw_reward / RAW_STEP_SCALE))
-        return normalized
-
-    def _normalize_total_reward(self, raw_total: float) -> float:
-        """Map cumulative raw reward into strict open interval (0, 1)."""
-        normalized = 1.0 / (1.0 + math.exp(-raw_total / RAW_TOTAL_SCALE))
-        return normalized
 
     def _current_goal_position(self) -> Optional[Tuple[int, int]]:
         """Current goal position: pickup location if not carrying, else dropoff."""

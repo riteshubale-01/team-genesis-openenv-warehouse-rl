@@ -27,44 +27,6 @@ from warehouse_env.models import (
 from environment import WarehouseEnvironment
 from inference import run_baseline
 
-
-SCORE_EPSILON = 1e-6
-
-
-def finalize_score(x):
-    try:
-        x = float(x)
-    except:
-        return 0.01
-
-    if not (x == x and x != float("inf") and x != float("-inf")):
-        return 0.01
-
-    if x < 0:
-        x = 0.0
-    elif x > 1:
-        x = 1.0
-
-    if x <= 0:
-        x = 0.01
-    elif x >= 1:
-        x = 0.99
-
-    # Step 1: round to 2 decimals
-    x = round(x, 2)
-
-    # Step 2: enforce strict range
-    if x <= 0:
-        return 0.01
-    if x >= 1:
-        return 0.99
-
-    return x
-
-
-def clamp_open01(x):
-    return finalize_score(x)
-
 app = FastAPI(
     title="Warehouse RL OpenEnv",
     description="Real-world warehouse decision-making environment for OpenEnv hackathon.",

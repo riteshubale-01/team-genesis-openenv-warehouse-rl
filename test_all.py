@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 from warehouse_env.models import ActionType, CellType, Position, Task, ResetRequest, StepRequest
 from environment import WarehouseEnvironment, GRID_SIZE
-from grader import compute_score, score_episode
+from grader import compute_score, convert_reward_to_score, score_episode
 
 
 # ─────────────────────────────────────────
@@ -69,11 +69,11 @@ class TestEnvironmentStep:
         assert isinstance(done, bool)
         assert isinstance(info, dict)
         assert "step_count" in info
-        assert 0.0 < reward < 1.0
+        assert reward == info["reward_raw"]
 
     def test_step_penalty_applied(self):
         _, reward, _, _ = self.env.step(7)  # WAIT
-        assert 0.0 <= reward <= 1.0
+        assert reward < 0.0
 
     def test_step_count_increments(self):
         for i in range(5):
@@ -84,7 +84,7 @@ class TestEnvironmentStep:
         # Action 99 is invalid — should not crash
         obs, reward, done, info = self.env.step(99)
         assert not done  # should not terminate
-        assert 0.0 <= reward <= 1.0
+        assert reward <= 0.0
 
     def test_battery_drains(self):
         for _ in range(10):
@@ -144,7 +144,7 @@ class TestActions:
         env.step(1)  # move away from any charger
         _, reward, _, info = env.step(6)  # RECHARGE
         # Should be invalid action
-        assert 0.0 <= reward <= 1.0
+        assert reward < 0.0
 
     def test_move_toward_pickup_rewards_more_than_wait(self):
         env_wait = WarehouseEnvironment()
@@ -245,6 +245,12 @@ class TestFullState:
 # ─────────────────────────────────────────
 
 class TestGrader:
+    def test_conversion_edge_clamps(self):
+        assert convert_reward_to_score(-10.0, 100.0) == 0.01
+        assert convert_reward_to_score(0.0, 100.0) == 0.01
+        assert convert_reward_to_score(100.0, 100.0) == 0.99
+        assert convert_reward_to_score(250.0, 100.0) == 0.99
+
     def test_perfect_score(self):
         result = compute_score(
             completed_tasks=3,
@@ -255,9 +261,11 @@ class TestGrader:
             battery_remaining=80.0,
             battery_depleted=False,
             difficulty="easy",
+            total_reward=100.0,
+            max_possible_reward=100.0,
         )
-        assert result["score"] > 0.8
-        assert 0.0 <= result["score"] <= 1.0
+        assert result["score"] == 0.99
+        assert 0.0 < result["score"] < 1.0
 
     def test_zero_tasks(self):
         result = compute_score(
@@ -269,19 +277,30 @@ class TestGrader:
             battery_remaining=10.0,
             battery_depleted=False,
             difficulty="easy",
+            total_reward=-5.0,
+            max_possible_reward=100.0,
         )
-        assert result["score"] < 0.5
+        assert result["score"] == 0.01
 
     def test_battery_depleted_penalty(self):
-        r1 = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy")
-        r2 = compute_score(0, 1, 100, 150, 0, 50.0, False, "easy")
+        r1 = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=5.0, max_possible_reward=100.0)
+        r2 = compute_score(0, 1, 100, 150, 0, 50.0, False, "easy", total_reward=50.0, max_possible_reward=100.0)
         assert r1["score"] < r2["score"]
 
-    def test_hard_difficulty_multiplier(self):
-        r_easy = compute_score(1, 1, 100, 150, 0, 80.0, False, "easy")
-        r_hard = compute_score(1, 1, 100, 250, 0, 80.0, False, "hard")
-        # Hard multiplier should yield higher score
-        assert r_hard["score"] >= r_easy["score"] * 0.9
+    def test_score_rounding_precision(self):
+        r = compute_score(
+            completed_tasks=1,
+            total_tasks_spawned=1,
+            total_steps=10,
+            max_steps=150,
+            collision_count=0,
+            battery_remaining=100.0,
+            battery_depleted=False,
+            difficulty="easy",
+            total_reward=33.333,
+            max_possible_reward=100.0,
+        )
+        assert r["score"] == 0.33
 
     def test_score_in_range(self):
         for seed in range(20):
@@ -297,12 +316,12 @@ class TestGrader:
                 battery_depleted=rng.random() < 0.2,
                 difficulty=rng.choice(["easy", "medium", "hard"]),
             )
-            assert 0.0 <= result["score"] <= 1.0
+            assert 0.0 < result["score"] < 1.0
 
     def test_score_episode_empty(self):
         result = score_episode([], difficulty="easy")
         assert "score" in result
-        assert result["score"] >= 0.0
+        assert 0.0 < result["score"] < 1.0
 
 
 # ─────────────────────────────────────────
@@ -322,7 +341,7 @@ class TestFullEpisode:
             steps += 1
         assert done
         result = score_episode(info_list, "easy")
-        assert 0.0 <= result["score"] <= 1.0
+        assert 0.0 < result["score"] < 1.0
 
     def test_heuristic_agent_easy(self):
         """Heuristic agent should complete at least 1 task on easy."""
@@ -341,7 +360,7 @@ class TestFullEpisode:
             steps += 1
         # Just check it doesn't crash and produces valid score
         result = score_episode(info_list, "easy")
-        assert 0.0 <= result["score"] <= 1.0
+        assert 0.0 < result["score"] < 1.0
 
     def test_medium_episode(self):
         env = WarehouseEnvironment()

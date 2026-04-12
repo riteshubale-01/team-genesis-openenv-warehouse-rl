@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 import requests
 from openai import OpenAI
 
-from grader import score_episode
+from grader import convert_reward_to_score, score_episode
 
 # ─────────────────────────────────────────
 # Config
@@ -51,42 +51,9 @@ ACTION_NAMES = {
 }
 
 
-def finalize_score(x):
-    try:
-        x = float(x)
-    except:
-        return 0.01
-
-    # Guard non-finite values.
-    if not (x == x and x != float("inf") and x != float("-inf")):
-        return 0.01
-
-    # 1) Normalize to [0, 1]
-    if x < 0:
-        x = 0.0
-    elif x > 1:
-        x = 1.0
-
-    # 2) Clamp BEFORE rounding
-    if x <= 0:
-        x = 0.01
-    elif x >= 1:
-        x = 0.99
-
-    # 3) Round to EXACTLY 2 decimals
-    x = round(x, 2)
-
-    # 4) Clamp AGAIN after rounding
-    if x <= 0:
-        return 0.01
-    if x >= 1:
-        return 0.99
-
-    return x
-
-
-def clamp_open01(x):
-    return finalize_score(x)
+def finalize_score(x: float) -> float:
+    # For already-normalized inputs, convert with max_possible_reward=1.0.
+    return convert_reward_to_score(x, 1.0)
 
 # ─────────────────────────────────────────
 # OpenAI client helpers
