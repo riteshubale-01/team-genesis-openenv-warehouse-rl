@@ -2,19 +2,19 @@
   "tasks": [
     {
       "task_id": "easy",
-      "score": 0.5,
-      "task_score": 0.5
+      "score": 0.52,
+      "task_score": 0.52
     },
     {
       "task_id": "medium",
-      "score": 0.5,
-      "task_score": 0.5
+      "score": 0.54,
+      "task_score": 0.54
     },
     {
       "task_id": "hard",
-      "score": 0.5,
-      "task_score": 0.5
+      "score": 0.56,
+      "task_score": 0.56
     }
   ],
-  "aggregate_score": 0.5
+  "aggregate_score": 0.54
 }
