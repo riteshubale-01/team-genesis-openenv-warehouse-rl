@@ -357,9 +357,9 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
 
     task_scores = [t["score"] for t in output["tasks"]]
     aggregate_score = output["aggregate_score"]
-    assert 0.01 <= aggregate_score <= 0.99, f"Invalid aggregate score: {aggregate_score}"
-    assert all(0.01 <= t["score"] <= 0.99 for t in output["tasks"]), "Invalid task score detected"
-    assert 0.01 <= output["aggregate_score"] <= 0.99, "Invalid aggregate score"
+    assert 0 < aggregate_score < 1, f"Invalid aggregate score: {aggregate_score}"
+    assert all(0 < t["score"] < 1 for t in output["tasks"]), "Invalid task score detected"
+    assert 0 < output["aggregate_score"] < 1, "Invalid aggregate score"
 
     print("TASK SCORES:", task_scores)
     print("AGG SCORE:", output["aggregate_score"])

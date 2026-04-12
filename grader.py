@@ -13,41 +13,36 @@ from environment import MAX_STEPS_MAP, MAX_TOTAL_TASKS, R_PICKUP, R_STEP_CORRECT
 
 
 SCORE_EPSILON = 1e-6
+SCORE_MIN = 0.000001    # must be > 0.0
+SCORE_MAX = 0.999999    # must be < 1.0
 
 
 def convert_reward_to_score(raw_reward: float, max_possible_reward: float) -> float:
-    """Convert cumulative raw reward to an OpenEnv-safe score in (0, 1)."""
+    """Convert cumulative raw reward to an OpenEnv-safe score in (0, 1).
+
+    Returns a value strictly within (SCORE_MIN, SCORE_MAX) so the
+    OpenEnv validator never sees 0.0 or 1.0.
+    """
     try:
         raw_reward = float(raw_reward)
         max_possible_reward = float(max_possible_reward)
     except Exception:
-        return 0.01
+        return SCORE_MIN
 
     if not math.isfinite(raw_reward) or not math.isfinite(max_possible_reward):
-        return 0.01
+        return SCORE_MIN
     if max_possible_reward <= 0:
-        return 0.01
+        return SCORE_MIN
 
-    # 1) safe normalization
+    # Safe normalization into [0, 1]
     normalized = raw_reward / max_possible_reward
 
-    # 2) explicit edge handling
-    if normalized <= 0:
-        normalized = 0.01
-    if normalized >= 1:
-        normalized = 0.99
+    # Strict clamp to (SCORE_MIN, SCORE_MAX) — never 0.0 or 1.0
+    clamped = max(SCORE_MIN, min(SCORE_MAX, normalized))
 
-    # 3) strict clip
-    normalized = min(0.99, max(0.01, normalized))
-
-    # 4) round
-    final_score = round(normalized, 2)
-
-    # 5) re-guard after rounding
-    if final_score <= 0:
-        return 0.01
-    if final_score >= 1:
-        return 0.99
+    # Round to 6 decimal places (matches openenv.yaml precision) and re-clamp
+    final_score = round(clamped, 6)
+    final_score = max(SCORE_MIN, min(SCORE_MAX, final_score))
 
     return final_score
 
