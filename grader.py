@@ -62,8 +62,28 @@ def format_task_score(score: float) -> Dict[str, float]:
 
 
 def format_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Format full tasks payload, including aggregate_score, via one conversion path."""
-    clean_tasks = [format_task_score(float(t.get("score", SCORE_EPSILON))) for t in tasks]
+    """Format full tasks payload, including aggregate_score, via one conversion path.
+
+    Preferred input per task:
+      - raw_reward: float
+      - difficulty: easy|medium|hard
+      - optional max_possible_reward override
+    Fallback input per task:
+      - score: pre-normalized value in [0,1]
+    """
+    clean_tasks: List[Dict[str, float]] = []
+    for t in tasks:
+        if "raw_reward" in t:
+            raw_reward = float(t.get("raw_reward", 0.0))
+            max_possible_reward = t.get("max_possible_reward")
+            if max_possible_reward is None:
+                difficulty = str(t.get("difficulty", "easy"))
+                max_possible_reward = max_possible_reward_for_difficulty(difficulty)
+            safe = convert_reward_to_score(raw_reward, float(max_possible_reward))
+            clean_tasks.append({"score": safe, "task_score": safe})
+        else:
+            clean_tasks.append(format_task_score(float(t.get("score", SCORE_EPSILON))))
+
     if clean_tasks:
         aggregate_raw = sum(t["score"] for t in clean_tasks) / len(clean_tasks)
     else:
@@ -101,7 +121,7 @@ def compute_score(
     if total_reward is None:
         # Compatibility path for callers that still pass legacy metrics only.
         completion_ratio = (completed_tasks / total_tasks_spawned) if total_tasks_spawned > 0 else 0.0
-        remaining_steps = max(0, max_steps - total_steps)
+        remaining_steps = (max_steps - total_steps) if max_steps > total_steps else 0
         battery_term = 0.0 if battery_depleted else (battery_remaining / 100.0)
         total_reward = (
             completion_ratio * 5.0

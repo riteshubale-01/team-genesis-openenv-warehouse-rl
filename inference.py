@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 import requests
 from openai import OpenAI
 
-from grader import format_tasks_payload, score_episode
+from grader import format_tasks_payload
 
 # ─────────────────────────────────────────
 # Config
@@ -263,7 +263,7 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
 # Main inference loop
 # ─────────────────────────────────────────
 
-def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, float]:
+def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, Any]:
     task_name = f"{TASK_NAME}_{difficulty}"
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
@@ -271,7 +271,7 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
     step_infos: List[Dict[str, Any]] = []
     step_n = 0
     success = False
-    safe_score = SCORE_EPSILON
+    raw_total_reward = 0.0
     use_heuristic_fallback = client is None
 
     try:
@@ -327,13 +327,14 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
                 f"reward={reward} done={'true' if done else 'false'} error={step_error}"
             )
 
-        graded = score_episode(step_infos, difficulty=difficulty)
-        safe_score = float(graded.get("score", SCORE_EPSILON))
-        success = safe_score > 0.0
+        if step_infos and "total_reward_raw" in step_infos[-1]:
+            raw_total_reward = float(step_infos[-1].get("total_reward_raw", 0.0))
+        else:
+            raw_total_reward = sum(rewards)
+        success = raw_total_reward > 0.0
 
     except Exception:
-        graded = score_episode([], difficulty=difficulty)
-        safe_score = float(graded.get("score", SCORE_EPSILON))
+        raw_total_reward = 0.0
     finally:
         rewards_str = ",".join(str(r) for r in rewards)
         print(
@@ -341,8 +342,8 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             f"steps={step_n} rewards={rewards_str}"
         )
 
-    assert isinstance(safe_score, float), f"Score must be float, got: {type(safe_score)}"
-    return {"score": safe_score}
+    assert isinstance(raw_total_reward, float), f"Raw reward must be float, got: {type(raw_total_reward)}"
+    return {"raw_reward": raw_total_reward, "difficulty": difficulty}
 
 
 def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, List[Dict[str, float]]]:
