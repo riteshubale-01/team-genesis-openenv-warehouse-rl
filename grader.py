@@ -88,6 +88,7 @@ def compute_score(task_result, difficulty="medium"):
         adjusted_reward = 0.0
 
     score = convert_reward_to_score(adjusted_reward, max_possible_reward)
+    score = strict_open_score(score)
 
     return {
         "score": score,
