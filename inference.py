@@ -1,9 +1,6 @@
 """
-Warehouse inference pipeline with:
-- Q-learning policy improvement across episodes
-- Priority-based manual override control
-- OpenAI proxy calls for platform observability
-- Validator-safe final scoring output through grader.py
+inference.py — Warehouse RL baseline inference script.
+Compliant with OpenEnv hackathon output format requirements.
 """
 
 from __future__ import annotations
@@ -11,8 +8,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -21,38 +18,50 @@ from openai import OpenAI
 from grader import build_output, compute_score
 
 
+# ─────────────────────────────────────────
+# CONFIG — reads env vars per hackathon spec
+# ─────────────────────────────────────────
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-API_KEY = os.environ.get("API_KEY")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
+MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+HF_TOKEN     = os.environ.get("HF_TOKEN")          # mandatory, no default
+SERVER_URL   = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 
-TASK_NAME = "warehouse_delivery"
-BENCHMARK = "WarehouseRL-v1"
+TASK_NAME  = "warehouse_delivery"
+BENCHMARK  = "WarehouseRL-v1"
 
 ACTION_NAMES = {
-    0: "MOVE_UP",
-    1: "MOVE_DOWN",
-    2: "MOVE_LEFT",
-    3: "MOVE_RIGHT",
-    4: "PICK",
-    5: "DROP",
-    6: "RECHARGE",
-    7: "WAIT",
+    0: "MOVE_UP", 1: "MOVE_DOWN", 2: "MOVE_LEFT", 3: "MOVE_RIGHT",
+    4: "PICK",    5: "DROP",      6: "RECHARGE",  7: "WAIT",
 }
 
-MAX_STEPS_BY_DIFFICULTY = {
-    "easy": 150,
-    "medium": 200,
-    "hard": 250,
-}
-
+MAX_STEPS_BY_DIFFICULTY = {"easy": 150, "medium": 200, "hard": 250}
 QTABLE_PATH = Path("mnt") / "q_table.json"
 
 
+# ─────────────────────────────────────────
+# CLIENT
+# ─────────────────────────────────────────
 def create_client() -> OpenAI:
-    if not API_KEY:
-        raise ValueError("API_KEY environment variable is required for inference")
-    return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    if not HF_TOKEN:
+        raise ValueError("HF_TOKEN environment variable is required")
+    return OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+
+
+# ─────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────
+def _manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _direction_action(from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> int:
+    fr, fc = from_pos
+    tr, tc = to_pos
+    if tr < fr: return 0
+    if tr > fr: return 1
+    if tc < fc: return 2
+    if tc > fc: return 3
+    return 7
 
 
 def parse_action(text: str) -> Optional[int]:
@@ -64,38 +73,14 @@ def parse_action(text: str) -> Optional[int]:
     return None
 
 
-def call_llm_action_hint(client: OpenAI, obs: Dict[str, Any], step_n: int) -> Optional[int]:
-    robot = obs.get("robot_pos", {})
-    tasks = obs.get("active_tasks", [])
-    battery = float(obs.get("battery", 100.0))
-    carrying = bool(obs.get("carrying_item", False))
-
-    prompt = (
-        "Choose one action id for warehouse robot.\n"
-        "Actions: 0 up, 1 down, 2 left, 3 right, 4 pick, 5 drop, 6 recharge, 7 wait.\n"
-        f"Step={step_n}, battery={battery:.1f}, carrying={carrying}, "
-        f"robot=({robot.get('row')},{robot.get('col')}), tasks={len(tasks)}.\n"
-        "Respond with only one digit 0-7."
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=6,
-        )
-        text = response.choices[0].message.content or ""
-        return parse_action(text)
-    except Exception:
-        return None
-
-
+# ─────────────────────────────────────────
+# ENV API
+# ─────────────────────────────────────────
 def env_reset(seed: int, difficulty: str) -> Dict[str, Any]:
     response = requests.post(
         f"{SERVER_URL}/reset",
         json={"seed": seed, "difficulty": difficulty},
-        timeout=20,
+        timeout=30,
     )
     response.raise_for_status()
     return response.json()
@@ -105,30 +90,15 @@ def env_step(action: int) -> Dict[str, Any]:
     response = requests.post(
         f"{SERVER_URL}/step",
         json={"action": action},
-        timeout=20,
+        timeout=30,
     )
     response.raise_for_status()
     return response.json()
 
 
-def _direction_action(from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> int:
-    fr, fc = from_pos
-    tr, tc = to_pos
-    if tr < fr:
-        return 0
-    if tr > fr:
-        return 1
-    if tc < fc:
-        return 2
-    if tc > fc:
-        return 3
-    return 7
-
-
-def _manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-
+# ─────────────────────────────────────────
+# Q-LEARNING AGENT
+# ─────────────────────────────────────────
 class QLearningAgent:
     def __init__(
         self,
@@ -178,19 +148,14 @@ class QLearningAgent:
         robot = obs.get("robot_pos", {})
         rr = int(robot.get("row", 0))
         rc = int(robot.get("col", 0))
-
         battery = float(obs.get("battery", 100.0))
         battery_bucket = max(0, min(9, int(battery // 10)))
-
         carrying = 1 if obs.get("carrying_item") else 0
-
         tasks = obs.get("active_tasks", [])
         active_count_bucket = min(3, len(tasks))
-
         nearest_dist_bucket = 4
         priority_bucket = 0
         dir_bucket = 4
-
         if tasks:
             best_task = self._select_reference_task(obs)
             if best_task:
@@ -200,7 +165,6 @@ class QLearningAgent:
                     nearest_dist_bucket = min(4, dist // 2)
                     priority_bucket = int(best_task.get("priority", 1))
                     dir_bucket = _direction_action((rr, rc), target)
-
         return (
             f"r{rr}_c{rc}_b{battery_bucket}_k{carrying}_"
             f"t{active_count_bucket}_d{nearest_dist_bucket}_p{priority_bucket}_dir{dir_bucket}"
@@ -210,21 +174,16 @@ class QLearningAgent:
         tasks = obs.get("active_tasks", [])
         if not tasks:
             return None
-
         robot = obs.get("robot_pos", {})
         rr = int(robot.get("row", 0))
         rc = int(robot.get("col", 0))
-
-        def key_fn(task: Dict[str, Any]) -> Tuple[int, int]:
+        def key_fn(task):
             priority = int(task.get("priority", 1))
             pickup = task.get("pickup_pos", {})
             dropoff = task.get("dropoff_pos", {})
             target = pickup if not task.get("picked_up", False) else dropoff
-            tr = int(target.get("row", rr))
-            tc = int(target.get("col", rc))
-            dist = _manhattan((rr, rc), (tr, tc))
+            dist = _manhattan((rr, rc), (int(target.get("row", rr)), int(target.get("col", rc))))
             return (-priority, dist)
-
         return sorted(tasks, key=key_fn)[0]
 
     def _task_goal(self, task: Dict[str, Any], carrying: int) -> Optional[Tuple[int, int]]:
@@ -242,12 +201,10 @@ class QLearningAgent:
 
     def choose_action(self, state_key: str, llm_hint: Optional[int]) -> int:
         self._ensure_state(state_key)
-
         if self._rng.random() < self.epsilon:
             if llm_hint is not None and self._rng.random() < 0.5:
                 return llm_hint
             return self._rng.randint(0, 7)
-
         values = self.q_table[state_key]
         max_q = max(values)
         best_actions = [idx for idx, v in enumerate(values) if v == max_q]
@@ -258,18 +215,18 @@ class QLearningAgent:
     def update(self, state_key: str, action: int, reward: float, next_state_key: str, done: bool) -> None:
         self._ensure_state(state_key)
         self._ensure_state(next_state_key)
-
         current_q = self.q_table[state_key][action]
         next_max = 0.0 if done else max(self.q_table[next_state_key])
-
         target = reward + self.gamma * next_max
-        updated = current_q + self.alpha * (target - current_q)
-        self.q_table[state_key][action] = updated
+        self.q_table[state_key][action] = current_q + self.alpha * (target - current_q)
 
     def decay_exploration(self) -> None:
         self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
 
 
+# ─────────────────────────────────────────
+# OVERRIDE CONTROLLER
+# ─────────────────────────────────────────
 class OverrideController:
     def __init__(self, trigger_threshold: float = 0.65):
         self.trigger_threshold = trigger_threshold
@@ -279,11 +236,8 @@ class OverrideController:
         tasks = obs.get("active_tasks", [])
         step_count = int(obs.get("step_count", 0))
         carrying = bool(obs.get("carrying_item", False))
-
         battery_risk = 1.0 if battery <= 10.0 else (0.6 if battery <= 18.0 else 0.0)
-        urgent_present = any(int(t.get("priority", 1)) >= 3 for t in tasks)
-        urgent_risk = 1.0 if urgent_present else 0.0
-
+        urgent_risk = 1.0 if any(int(t.get("priority", 1)) >= 3 for t in tasks) else 0.0
         deadline_risk = 0.0
         if tasks:
             max_steps = MAX_STEPS_BY_DIFFICULTY.get(obs.get("difficulty", "medium"), 200)
@@ -292,19 +246,13 @@ class OverrideController:
                 deadline_risk = 0.8
             elif progress > 0.7:
                 deadline_risk = 0.4
-
         carrying_risk = 0.2 if carrying and battery < 20 else 0.0
-
-        score = 0.45 * battery_risk + 0.35 * urgent_risk + 0.15 * deadline_risk + 0.05 * carrying_risk
-
+        score = (0.45 * battery_risk + 0.35 * urgent_risk +
+                 0.15 * deadline_risk + 0.05 * carrying_risk)
         reason = "none"
-        if battery_risk >= 0.6:
-            reason = "low_battery"
-        elif urgent_risk > 0:
-            reason = "urgent_task"
-        elif deadline_risk > 0:
-            reason = "deadline_pressure"
-
+        if battery_risk >= 0.6:       reason = "low_battery"
+        elif urgent_risk > 0:         reason = "urgent_task"
+        elif deadline_risk > 0:       reason = "deadline_pressure"
         return score >= self.trigger_threshold, reason, score
 
     def override_policy(self, obs: Dict[str, Any]) -> int:
@@ -313,30 +261,26 @@ class OverrideController:
         rc = int(robot.get("col", 0))
         battery = float(obs.get("battery", 100.0))
         carrying = bool(obs.get("carrying_item", False))
-
         if battery <= 18.0:
             charger_targets = [(0, 0), (0, 9), (9, 0), (9, 9)]
             nearest = min(charger_targets, key=lambda p: _manhattan((rr, rc), p))
             if nearest == (rr, rc):
                 return 6
             return _direction_action((rr, rc), nearest)
-
         tasks = obs.get("active_tasks", [])
         if not tasks:
             return 7
-
         prioritized = sorted(
             tasks,
-            key=lambda t: (-int(t.get("priority", 1)), _manhattan((rr, rc), self._task_target(t, carrying))),
+            key=lambda t: (-int(t.get("priority", 1)),
+                           _manhattan((rr, rc), self._task_target(t, carrying))),
         )
         task = prioritized[0]
         target = self._task_target(task, carrying)
-
         if carrying and task.get("picked_up", False) and (rr, rc) == target:
             return 5
         if (not carrying) and (not task.get("picked_up", False)) and (rr, rc) == target:
             return 4
-
         return _direction_action((rr, rc), target)
 
     @staticmethod
@@ -348,6 +292,37 @@ class OverrideController:
         return (int(pos.get("row", 0)), int(pos.get("col", 0)))
 
 
+# ─────────────────────────────────────────
+# LLM HINT
+# ─────────────────────────────────────────
+def call_llm_action_hint(client: OpenAI, obs: Dict[str, Any], step_n: int) -> Optional[int]:
+    robot = obs.get("robot_pos", {})
+    tasks = obs.get("active_tasks", [])
+    battery = float(obs.get("battery", 100.0))
+    carrying = bool(obs.get("carrying_item", False))
+    prompt = (
+        "Choose one action id for warehouse robot.\n"
+        "Actions: 0 up, 1 down, 2 left, 3 right, 4 pick, 5 drop, 6 recharge, 7 wait.\n"
+        f"Step={step_n}, battery={battery:.1f}, carrying={carrying}, "
+        f"robot=({robot.get('row')},{robot.get('col')}), tasks={len(tasks)}.\n"
+        "Respond with only one digit 0-7."
+    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=6,
+        )
+        text = response.choices[0].message.content or ""
+        return parse_action(text)
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────
+# EPISODE RUNNER
+# ─────────────────────────────────────────
 def run_episode(
     client: OpenAI,
     q_agent: QLearningAgent,
@@ -356,6 +331,8 @@ def run_episode(
     seed: int,
 ) -> Dict[str, Any]:
     task_name = f"{TASK_NAME}_{difficulty}"
+
+    # [START] required format: task= env= model=
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
     reset_data = env_reset(seed=seed, difficulty=difficulty)
@@ -365,49 +342,67 @@ def run_episode(
     done = False
     step_n = 0
     total_reward = 0.0
+    step_rewards: List[float] = []
+    last_error: Optional[str] = None
 
-    while not done:
+    # FIX: use the difficulty-based maximum as both the cap AND what we report
+    max_steps = MAX_STEPS_BY_DIFFICULTY.get(difficulty, 200)
+
+    while not done and step_n < max_steps:
         step_n += 1
         state_key = q_agent.encode_state(obs)
 
-        override_active, override_reason, priority_score = override_ctrl.should_override(obs)
-
+        override_active, override_reason, _ = override_ctrl.should_override(obs)
         llm_hint = call_llm_action_hint(client, obs, step_n)
 
         if override_active:
             action = override_ctrl.override_policy(obs)
-            source = f"override:{override_reason}:{priority_score:.2f}"
         else:
             action = q_agent.choose_action(state_key, llm_hint)
-            source = "q_learning"
 
-        step_data = env_step(action)
+        try:
+            step_data = env_step(action)
+            last_error = step_data.get("info", {}).get("last_action_error") or None
+        except Exception as exc:
+            last_error = str(exc)
+            step_data = {}
+
         next_obs = step_data.get("observation", {})
         next_obs["difficulty"] = difficulty
-
         reward = float(step_data.get("reward", 0.0))
         done = bool(step_data.get("done", False))
         total_reward += reward
+        step_rewards.append(reward)
 
         next_state_key = q_agent.encode_state(next_obs)
-
         if not override_active:
             q_agent.update(state_key, action, reward, next_state_key, done)
 
+        action_name = ACTION_NAMES.get(action, "WAIT")
+        error_str = last_error if last_error else "null"
+
+        # [STEP] required format: step= action= reward= done= error=
         print(
-            f"[STEP] step={step_n} action={ACTION_NAMES.get(action, 'WAIT')} "
-            f"reward={reward:.2f} done={'true' if done else 'false'} source={source}"
+            f"[STEP] step={step_n} action={action_name} "
+            f"reward={reward:.2f} done={'true' if done else 'false'} error={error_str}"
         )
 
         obs = next_obs
 
     q_agent.decay_exploration()
 
-    print(f"[END] success=true steps={step_n} rewards_total={total_reward:.2f}")
+    rewards_str = ",".join(f"{r:.2f}" for r in step_rewards)
+
+    # [END] required format: success= steps= rewards=
+    print(
+        f"[END] success={'true' if done else 'false'} "
+        f"steps={step_n} rewards={rewards_str}"
+    )
 
     return {
         "total_reward": total_reward,
-        "max_steps": MAX_STEPS_BY_DIFFICULTY.get(difficulty, step_n),
+        # FIX: always the difficulty cap, never the actual step count
+        "max_steps": max_steps,
         "step_reward": 0.2,
         "pickup_reward": 0.3,
         "dropoff_reward": 0.3,
@@ -415,7 +410,14 @@ def run_episode(
     }
 
 
-def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, Any]:
+# ─────────────────────────────────────────
+# BASELINE RUNNER
+# ─────────────────────────────────────────
+def run_baseline(
+    difficulties: List[str],
+    seed: int,
+    output_json: str,
+) -> Dict[str, Any]:
     client = create_client()
 
     q_agent = QLearningAgent()
@@ -433,13 +435,11 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
             seed=seed + idx,
         )
         graded = compute_score(result, diff)
-        tasks.append(
-            {
-                "task_id": diff,
-                "score": graded["score"],
-                "task_score": graded["task_score"],
-            }
-        )
+        tasks.append({
+            "task_id": diff,
+            "score": graded["score"],
+            "task_score": graded["task_score"],
+        })
 
     q_agent.save(QTABLE_PATH)
 
@@ -452,6 +452,9 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
     return output
 
 
+# ─────────────────────────────────────────
+# ENTRY POINT — exactly ONE block
+# ─────────────────────────────────────────
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Warehouse RL baseline inference")
     parser.add_argument("--difficulties", default="easy,medium,hard")
@@ -469,167 +472,3 @@ if __name__ == "__main__":
         raise ValueError(f"Invalid difficulties: {invalid}. Allowed: easy,medium,hard")
 
     run_baseline(difficulties=difficulties, seed=args.seed, output_json=args.output_json)
-import argparse
-import json
-import os
-import sys
-from typing import Any, Dict, List
-
-import requests
-from openai import OpenAI
-
-from grader import compute_score, build_output
-
-
-# ================================
-# 🔑 CONFIG (STRICT)
-# ================================
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-API_KEY = os.environ.get("API_KEY")
-
-SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-
-ACTION_NAMES = {
-    0: "MOVE_UP",
-    1: "MOVE_DOWN",
-    2: "MOVE_LEFT",
-    3: "MOVE_RIGHT",
-    4: "PICK",
-    5: "DROP",
-    6: "RECHARGE",
-    7: "WAIT",
-}
-
-
-# ================================
-# 🤖 OPENAI CLIENT (MANDATORY)
-# ================================
-def create_client():
-    if not API_KEY:
-        raise ValueError("API_KEY environment variable is required for inference")
-    return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
-
-def call_llm(client, prompt):
-    resp = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-        max_tokens=10,
-    )
-    return resp.choices[0].message.content.strip()
-
-
-def parse_action(text):
-    for ch in text:
-        if ch.isdigit():
-            return int(ch)
-    return 7
-
-
-# ================================
-# 🌍 ENV API
-# ================================
-def env_reset(seed, difficulty):
-    return requests.post(
-        f"{SERVER_URL}/reset",
-        json={"seed": seed, "difficulty": difficulty}
-    ).json()
-
-
-def env_step(action):
-    return requests.post(
-        f"{SERVER_URL}/step",
-        json={"action": action}
-    ).json()
-
-
-# ================================
-# 🔁 RUN ONE EPISODE
-# ================================
-def run_episode(client, difficulty, seed):
-    print(f"[START] task={difficulty}")
-
-    data = env_reset(seed, difficulty)
-    obs = data.get("observation", {})
-
-    done = False
-    total_reward = 0
-    steps = 0
-
-    while not done:
-        steps += 1
-
-        prompt = f"Choose action (0-7). Step {steps}"
-        
-        try:
-            raw = call_llm(client, prompt)
-            action = parse_action(raw)
-        except:
-            action = 7  # fallback but AFTER API attempt
-
-        step = env_step(action)
-
-        reward = float(step.get("reward", 0))
-        done = step.get("done", False)
-
-        total_reward += reward
-
-        print(f"[STEP] step={steps} action={action} reward={reward:.2f} done={done}")
-
-    print(f"[END] steps={steps}")
-
-    return {
-        "total_reward": total_reward,
-        "max_steps": steps,
-        "difficulty": difficulty
-    }
-
-
-# ================================
-# 🚀 MAIN
-# ================================
-def run_baseline(difficulties, seed, output_json):
-    client = create_client()
-
-    tasks = []
-
-    for diff in difficulties:
-        result = run_episode(client, diff, seed)
-
-        graded = compute_score(result, diff)
-
-        tasks.append({
-            "task_id": diff,
-            "score": graded["score"],
-            "task_score": graded["task_score"]
-        })
-
-    output = build_output(tasks)
-
-    with open(output_json, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2)
-
-    print(json.dumps(output, indent=2))
-    return output
-
-
-def run_all(difficulties, seed, output_file):
-    return run_baseline(difficulties=difficulties, seed=seed, output_json=output_file)
-
-
-# ================================
-# 🧪 ENTRY
-# ================================
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--difficulties", default="easy,medium,hard")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-json", default="baseline_scores.json")
-
-    args = parser.parse_args()
-
-    diffs = [d.strip() for d in args.difficulties.split(",")]
-
-    run_all(diffs, args.seed, args.output_json)
