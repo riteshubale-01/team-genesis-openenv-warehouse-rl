@@ -14,7 +14,7 @@ from grader import compute_score, build_output
 # 🔑 CONFIG (STRICT)
 # ================================
 API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY = os.environ["API_KEY"]
+API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
 
 SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
@@ -35,10 +35,9 @@ ACTION_NAMES = {
 # 🤖 OPENAI CLIENT (MANDATORY)
 # ================================
 def create_client():
-    return OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY
-    )
+    if not API_KEY:
+        return None
+    return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
 
 def call_llm(client, prompt):
