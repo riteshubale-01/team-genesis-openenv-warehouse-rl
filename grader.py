@@ -3,10 +3,6 @@ import math
 
 
 def strict_open_score(value) -> float:
-    """
-    Convert any numeric-ish value into a score strictly inside (0, 1),
-    rounded to 2 decimals, with final guards after rounding.
-    """
     try:
         x = float(value)
     except Exception:
@@ -15,16 +11,16 @@ def strict_open_score(value) -> float:
     if not math.isfinite(x):
         return 0.01
 
-    # Clamp before rounding
-    x = max(0.01, min(0.99, x))
+    # HARD CLAMP FIRST
+    x = max(0.0, min(1.0, x))
 
-    # Round to 2 decimals
+    # ROUND
     x = round(x, 2)
 
-    # Final guard after rounding
-    if x <= 0:
+    # FINAL STRICT OPEN INTERVAL FIX
+    if x <= 0.0:
         return 0.01
-    if x >= 1:
+    if x >= 1.0:
         return 0.99
 
     return x

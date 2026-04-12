@@ -1,14 +1,17 @@
 {
   "tasks": [
     {
+      "task_id": "easy",
       "score": 0.5,
       "task_score": 0.5
     },
     {
+      "task_id": "medium",
       "score": 0.5,
       "task_score": 0.5
     },
     {
+      "task_id": "hard",
       "score": 0.5,
       "task_score": 0.5
     }
