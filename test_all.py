@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 from warehouse_env.models import ActionType, CellType, Position, Task, ResetRequest, StepRequest
 from environment import WarehouseEnvironment, GRID_SIZE
-from grader import compute_score, score_episode
+from grader import compute_score, compute_score_legacy, score_episode, clamp_open_score, normalize_reward, SCORE_EPSILON
 
 
 # ─────────────────────────────────────────
@@ -245,18 +245,47 @@ class TestFullState:
 # ─────────────────────────────────────────
 
 class TestGrader:
+    def test_clamp_open_score_edges(self):
+        """clamp_open_score must never return 0.0 or 1.0."""
+        assert clamp_open_score(0.0) == 0.01
+        assert clamp_open_score(-5.0) == 0.01
+        assert clamp_open_score(1.0) == 0.99
+        assert clamp_open_score(5.0) == 0.99
+        assert clamp_open_score(0.5) == 0.5
+
+    def test_normalize_reward_same_min_max(self):
+        """When min==max, should return midpoint."""
+        result = normalize_reward(5.0, 5.0, 5.0)
+        assert result == 0.5  # (REWARD_MIN + REWARD_MAX) / 2
+
+    def test_normalize_reward_range(self):
+        """Normalized rewards should stay in (0, 1)."""
+        result = normalize_reward(0.0, 0.0, 10.0)
+        assert 0 < result < 1
+        result = normalize_reward(10.0, 0.0, 10.0)
+        assert 0 < result < 1
+
+    def test_compute_score_empty(self):
+        """Empty rewards should return SCORE_EPSILON."""
+        assert compute_score([]) == SCORE_EPSILON
+
+    def test_compute_score_valid_range(self):
+        """Score from rewards list must be strictly in (0, 1)."""
+        score = compute_score([0.1, 0.5, 0.9])
+        assert 0 < score < 1
+
     def test_conversion_edge_clamps(self):
-        low = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=-10.0, max_possible_reward=100.0)
-        zero = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=0.0, max_possible_reward=100.0)
-        at_top = compute_score(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=100.0, max_possible_reward=100.0)
-        above = compute_score(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=250.0, max_possible_reward=100.0)
+        low = compute_score_legacy(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=-10.0, max_possible_reward=100.0)
+        zero = compute_score_legacy(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=0.0, max_possible_reward=100.0)
+        at_top = compute_score_legacy(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=100.0, max_possible_reward=100.0)
+        above = compute_score_legacy(1, 1, 10, 150, 0, 100.0, False, "easy", total_reward=250.0, max_possible_reward=100.0)
         assert low["score"] == 0.01
         assert zero["score"] == 0.01
         assert at_top["score"] == 0.99
         assert above["score"] == 0.99
 
     def test_perfect_score(self):
-        result = compute_score(
+        result = compute_score_legacy(
             completed_tasks=3,
             total_tasks_spawned=3,
             total_steps=50,
@@ -272,7 +301,7 @@ class TestGrader:
         assert 0.0 < result["score"] < 1.0
 
     def test_zero_tasks(self):
-        result = compute_score(
+        result = compute_score_legacy(
             completed_tasks=0,
             total_tasks_spawned=3,
             total_steps=150,
@@ -287,12 +316,12 @@ class TestGrader:
         assert result["score"] == 0.01
 
     def test_battery_depleted_penalty(self):
-        r1 = compute_score(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=5.0, max_possible_reward=100.0)
-        r2 = compute_score(0, 1, 100, 150, 0, 50.0, False, "easy", total_reward=50.0, max_possible_reward=100.0)
+        r1 = compute_score_legacy(0, 1, 100, 150, 0, 0.0, True, "easy", total_reward=5.0, max_possible_reward=100.0)
+        r2 = compute_score_legacy(0, 1, 100, 150, 0, 50.0, False, "easy", total_reward=50.0, max_possible_reward=100.0)
         assert r1["score"] < r2["score"]
 
     def test_score_rounding_precision(self):
-        r = compute_score(
+        r = compute_score_legacy(
             completed_tasks=1,
             total_tasks_spawned=1,
             total_steps=10,
@@ -304,13 +333,14 @@ class TestGrader:
             total_reward=33.333,
             max_possible_reward=100.0,
         )
-        assert r["score"] == 0.33
+        # round(0.33333, 4) = 0.3333  (4 decimal places, GridMind-style)
+        assert r["score"] == 0.3333
 
     def test_score_in_range(self):
         for seed in range(20):
             import random
             rng = random.Random(seed)
-            result = compute_score(
+            result = compute_score_legacy(
                 completed_tasks=rng.randint(0, 5),
                 total_tasks_spawned=rng.randint(1, 5),
                 total_steps=rng.randint(1, 250),

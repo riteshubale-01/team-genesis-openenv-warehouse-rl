@@ -1,8 +1,9 @@
 """Reward-first grading utilities for Warehouse OpenEnv.
 
-This module follows a GridMind-style pipeline:
-1) accumulate raw environment rewards during rollouts
-2) convert raw totals to validator-safe scores only at the end
+Follows the GridMind scoring pipeline:
+  1) Per-step raw rewards are normalized via running min/max into (REWARD_MIN, REWARD_MAX)
+  2) Episode score = mean(normalized_rewards) → clamp → round(4)
+  3) All scores strictly in open interval (0, 1) — never 0.0 or 1.0
 """
 
 from __future__ import annotations
@@ -12,44 +13,60 @@ from typing import Dict, Any, List, Optional
 from environment import MAX_STEPS_MAP, MAX_TOTAL_TASKS, R_PICKUP, R_STEP_CORRECT, R_TASK_COMPLETE
 
 
-SCORE_EPSILON = 1e-6
-SCORE_MIN = 0.000001    # must be > 0.0
-SCORE_MAX = 0.999999    # must be < 1.0
+# ── Score Constants (aligned with GridMind) ──────────────────────────────────
+
+# Reward range per step after normalization: (0.10, 0.90)
+REWARD_MIN = 0.10
+REWARD_MAX = 0.90
+
+# Score clamp buffer — never output exactly 0.0 or 1.0
+SCORE_EPSILON = 0.01
 
 
-def convert_reward_to_score(raw_reward: float, max_possible_reward: float) -> float:
-    """Convert cumulative raw reward to an OpenEnv-safe score in (0, 1).
+# ── GridMind-style scoring functions ─────────────────────────────────────────
 
-    Returns a value strictly within (SCORE_MIN, SCORE_MAX) so the
-    OpenEnv validator never sees 0.0 or 1.0.
+def clamp_open_score(score: float) -> float:
+    """Clamp score to strictly between 0 and 1 (never 0.0 or 1.0).
+
+    Mirrors GridMind's clamp_open_score() exactly.
     """
-    try:
-        raw_reward = float(raw_reward)
-        max_possible_reward = float(max_possible_reward)
-    except Exception:
-        return SCORE_MIN
+    if score <= 0.0:
+        return SCORE_EPSILON
+    if score >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return score
 
-    if not math.isfinite(raw_reward) or not math.isfinite(max_possible_reward):
-        return SCORE_MIN
-    if max_possible_reward <= 0:
-        return SCORE_MIN
 
-    # Safe normalization into [0, 1]
-    normalized = raw_reward / max_possible_reward
+def normalize_reward(raw_reward: float, raw_min: float, raw_max: float) -> float:
+    """Normalize a single raw reward to (REWARD_MIN, REWARD_MAX) range.
 
-    # Strict clamp to (SCORE_MIN, SCORE_MAX) — never 0.0 or 1.0
-    clamped = max(SCORE_MIN, min(SCORE_MAX, normalized))
+    Uses running min/max from the episode to scale rewards, matching
+    GridMind's normalize_reward().
+    """
+    if raw_max == raw_min:
+        return (REWARD_MIN + REWARD_MAX) / 2
+    normalized = (raw_reward - raw_min) / (raw_max - raw_min)
+    normalized = normalized * (REWARD_MAX - REWARD_MIN) + REWARD_MIN
+    return clamp_open_score(normalized)
 
-    # Round to 6 decimal places (matches openenv.yaml precision) and re-clamp
-    final_score = round(clamped, 6)
-    final_score = max(SCORE_MIN, min(SCORE_MAX, final_score))
 
-    return final_score
+def compute_score(rewards: List[float]) -> float:
+    """Return mean reward clamped strictly to (0.01, 0.99).
 
+    Mirrors GridMind's compute_score() exactly:
+      mean → round(4) → clamp
+    """
+    if not rewards:
+        return SCORE_EPSILON
+    mean_reward = sum(rewards) / len(rewards)
+    return clamp_open_score(round(mean_reward, 4))
+
+
+# ── Payload formatting ──────────────────────────────────────────────────────
 
 def format_task_score(score: float) -> Dict[str, float]:
     """Format a single task score payload with validator-safe bounds."""
-    safe = convert_reward_to_score(score, 1.0)
+    safe = clamp_open_score(round(float(score), 4))
     return {
         "score": safe,
         "task_score": safe,
@@ -57,33 +74,40 @@ def format_task_score(score: float) -> Dict[str, float]:
 
 
 def format_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Format full tasks payload, including aggregate_score, via one conversion path.
+    """Format full tasks payload, including aggregate_score.
 
-    Preferred input per task:
-      - raw_reward: float
-      - difficulty: easy|medium|hard
-      - optional max_possible_reward override
-    Fallback input per task:
-      - score: pre-normalized value in [0,1]
+    Accepts per-task input as either:
+      - score: pre-computed episode score (preferred — from compute_score)
+      - raw_reward + difficulty: legacy path, normalizes via max_possible_reward
     """
     clean_tasks: List[Dict[str, float]] = []
     for t in tasks:
-        if "raw_reward" in t:
+        if "score" in t:
+            # Preferred path: score already computed GridMind-style
+            safe = clamp_open_score(round(float(t["score"]), 4))
+            clean_tasks.append({"score": safe, "task_score": safe})
+        elif "raw_reward" in t:
+            # Legacy path: normalize raw reward against theoretical max
             raw_reward = float(t.get("raw_reward", 0.0))
             max_possible_reward = t.get("max_possible_reward")
             if max_possible_reward is None:
                 difficulty = str(t.get("difficulty", "easy"))
                 max_possible_reward = max_possible_reward_for_difficulty(difficulty)
-            safe = convert_reward_to_score(raw_reward, float(max_possible_reward))
+            max_possible_reward = float(max_possible_reward)
+            if max_possible_reward <= 0:
+                safe = SCORE_EPSILON
+            else:
+                normalized = raw_reward / max_possible_reward
+                safe = clamp_open_score(round(normalized, 4))
             clean_tasks.append({"score": safe, "task_score": safe})
         else:
-            clean_tasks.append(format_task_score(float(t.get("score", SCORE_EPSILON))))
+            clean_tasks.append(format_task_score(SCORE_EPSILON))
 
     if clean_tasks:
         aggregate_raw = sum(t["score"] for t in clean_tasks) / len(clean_tasks)
     else:
         aggregate_raw = SCORE_EPSILON
-    aggregate_score = convert_reward_to_score(aggregate_raw, 1.0)
+    aggregate_score = clamp_open_score(round(aggregate_raw, 4))
     return {
         "tasks": clean_tasks,
         "aggregate_score": aggregate_score,
@@ -91,7 +115,7 @@ def format_tasks_payload(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def max_possible_reward_for_difficulty(difficulty: str) -> float:
-    """Conservative max-reward estimate used for final score conversion."""
+    """Conservative max-reward estimate used for fallback score conversion."""
     diff = difficulty if difficulty in MAX_STEPS_MAP else "easy"
     max_steps = MAX_STEPS_MAP[diff]
     max_tasks = MAX_TOTAL_TASKS.get(diff, 1)
@@ -100,7 +124,9 @@ def max_possible_reward_for_difficulty(difficulty: str) -> float:
     return (max_steps * R_STEP_CORRECT) + (max_tasks * (R_PICKUP + R_TASK_COMPLETE))
 
 
-def compute_score(
+# ── Legacy API (kept for backward compatibility with compute_score callers) ──
+
+def compute_score_legacy(
     completed_tasks: int,
     total_tasks_spawned: int,
     total_steps: int,
@@ -114,7 +140,6 @@ def compute_score(
 ) -> Dict[str, Any]:
     """Compute score by converting final raw reward at the grading boundary."""
     if total_reward is None:
-        # Compatibility path for callers that still pass legacy metrics only.
         completion_ratio = (completed_tasks / total_tasks_spawned) if total_tasks_spawned > 0 else 0.0
         remaining_steps = (max_steps - total_steps) if max_steps > total_steps else 0
         battery_term = 0.0 if battery_depleted else (battery_remaining / 100.0)
@@ -128,7 +153,11 @@ def compute_score(
     if max_possible_reward is None:
         max_possible_reward = max_possible_reward_for_difficulty(difficulty)
 
-    score = convert_reward_to_score(total_reward, max_possible_reward)
+    if max_possible_reward <= 0:
+        score = SCORE_EPSILON
+    else:
+        normalized = total_reward / max_possible_reward
+        score = clamp_open_score(round(normalized, 4))
 
     return {
         "score": score,
@@ -143,7 +172,7 @@ def score_episode(episode_info_list: List[Dict[str, Any]], difficulty: str = "ea
     """
     max_possible_reward = max_possible_reward_for_difficulty(difficulty)
     if not episode_info_list:
-        score = convert_reward_to_score(0.0, max_possible_reward)
+        score = SCORE_EPSILON
         return {"score": score, "task_score": score}
 
     last = episode_info_list[-1]
@@ -153,5 +182,9 @@ def score_episode(episode_info_list: List[Dict[str, Any]], difficulty: str = "ea
     else:
         raw_total = sum(float(i.get("reward_raw", 0.0)) for i in episode_info_list)
 
-    score = convert_reward_to_score(raw_total, max_possible_reward)
+    if max_possible_reward <= 0:
+        score = SCORE_EPSILON
+    else:
+        normalized = raw_total / max_possible_reward
+        score = clamp_open_score(round(normalized, 4))
     return {"score": score, "task_score": score}

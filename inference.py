@@ -20,7 +20,15 @@ from typing import Any, Dict, List
 import requests
 from openai import OpenAI
 
-from grader import format_tasks_payload
+from grader import (
+    format_tasks_payload,
+    clamp_open_score,
+    normalize_reward,
+    compute_score,
+    SCORE_EPSILON,
+    REWARD_MIN,
+    REWARD_MAX,
+)
 
 # ─────────────────────────────────────────
 # Config
@@ -34,7 +42,6 @@ SERVER_URL: str = os.environ.get("ENV_SERVER_URL", "http://localhost:7860")
 DIFFICULTY: str = os.environ.get("DIFFICULTY", "easy")
 SEED: int       = int(os.environ.get("SEED", "42"))
 MAX_RETRIES: int = 3
-SCORE_EPSILON = 1e-6
 
 TASK_NAME  = "warehouse_delivery"
 BENCHMARK  = "WarehouseRL-v1"
@@ -117,7 +124,11 @@ def parse_action(raw: str) -> int:
 
 
 def enforce_strict(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Build strict payload using grader-owned score formatting only."""
+    """Build strict payload using grader-owned score formatting only.
+
+    Each task dict should have a 'score' key with a value already
+    computed by the GridMind-style compute_score() pipeline.
+    """
     return format_tasks_payload(tasks)
 
 
@@ -264,15 +275,26 @@ def heuristic_action(obs: Dict[str, Any]) -> int:
 # ─────────────────────────────────────────
 
 def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, Any]:
+    """Run a single episode and emit hackathon-compliant stdout format.
+
+    Follows GridMind's scoring pipeline:
+      1) Collect raw rewards per step
+      2) Track running min/max for normalization
+      3) Normalize all rewards at episode end
+      4) Episode score = mean(normalized_rewards) → clamp → round(4)
+    """
     task_name = f"{TASK_NAME}_{difficulty}"
     print(f"[START] task={task_name} env={BENCHMARK} model={MODEL_NAME}")
 
-    rewards: List[float] = []
+    raw_rewards: List[float] = []  # Raw rewards from environment
     step_infos: List[Dict[str, Any]] = []
     step_n = 0
     success = False
-    raw_total_reward = 0.0
     use_heuristic_fallback = client is None
+
+    # Running min/max for GridMind-style normalization
+    reward_min = float('inf')
+    reward_max = float('-inf')
 
     try:
         reset_data = env_reset(seed=seed, difficulty=difficulty)
@@ -307,46 +329,61 @@ def run_episode(client: OpenAI | None, difficulty: str, seed: int) -> Dict[str, 
             try:
                 step_data = env_step(action)
                 obs = step_data.get("observation", {})
-                reward = float(step_data.get("reward", 0.0))
+                raw_reward = float(step_data.get("reward", 0.0))
                 done = bool(step_data.get("done", False))
                 info = step_data.get("info", {}) or {}
-                rewards.append(reward)
+                raw_rewards.append(raw_reward)
                 step_infos.append(info)
+
+                # Track running min/max for normalization
+                if raw_reward < reward_min:
+                    reward_min = raw_reward
+                if raw_reward > reward_max:
+                    reward_max = raw_reward
 
                 info_error = info.get("last_action_error")
                 if info_error:
                     step_error = str(info_error)
             except Exception as e:
-                reward = 0.0
+                raw_reward = 0.0
                 done = True
-                rewards.append(reward)
+                raw_rewards.append(raw_reward)
+                if raw_reward < reward_min:
+                    reward_min = raw_reward
+                if raw_reward > reward_max:
+                    reward_max = raw_reward
                 step_error = sanitize_error(e)
+
+            # Normalize per-step reward for [STEP] output (GridMind format)
+            normalized_reward = normalize_reward(raw_reward, reward_min, reward_max)
 
             print(
                 f"[STEP]  step={step_n} action={ACTION_NAMES.get(action, 'UNKNOWN')} "
-                f"reward={reward} done={'true' if done else 'false'} error={step_error}"
+                f"reward={normalized_reward:.2f} done={'true' if done else 'false'} error={step_error}"
             )
 
-        if step_infos and "total_reward_raw" in step_infos[-1]:
-            raw_total_reward = float(step_infos[-1].get("total_reward_raw", 0.0))
-        else:
-            raw_total_reward = sum(rewards)
-        success = raw_total_reward > 0.0
+        success = sum(raw_rewards) > 0.0
 
     except Exception:
-        raw_total_reward = 0.0
+        pass
     finally:
-        rewards_str = ",".join(str(r) for r in rewards)
+        # Normalize all rewards and compute episode score (GridMind pipeline)
+        normalized_rewards = [
+            normalize_reward(r, reward_min, reward_max) for r in raw_rewards
+        ] if raw_rewards else []
+        episode_score = compute_score(normalized_rewards)
+
+        rewards_str = ",".join(f"{r:.2f}" for r in normalized_rewards)
         print(
             f"[END]   success={'true' if success else 'false'} "
-            f"steps={step_n} rewards={rewards_str}"
+            f"steps={step_n} score={episode_score:.4f} rewards={rewards_str}"
         )
 
-    assert isinstance(raw_total_reward, float), f"Raw reward must be float, got: {type(raw_total_reward)}"
-    return {"raw_reward": raw_total_reward, "difficulty": difficulty}
+    return {"score": episode_score, "difficulty": difficulty}
 
 
 def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[str, List[Dict[str, float]]]:
+    """Run episodes for each difficulty, score GridMind-style, and save."""
     client = create_openai_client()
     results = []
     for difficulty in difficulties:
@@ -355,14 +392,14 @@ def run_baseline(difficulties: List[str], seed: int, output_json: str) -> Dict[s
 
     output = enforce_strict(results)
 
+    # Validate all scores strictly in open interval (0, 1)
     task_scores = [t["score"] for t in output["tasks"]]
     aggregate_score = output["aggregate_score"]
     assert 0 < aggregate_score < 1, f"Invalid aggregate score: {aggregate_score}"
-    assert all(0 < t["score"] < 1 for t in output["tasks"]), "Invalid task score detected"
-    assert 0 < output["aggregate_score"] < 1, "Invalid aggregate score"
+    assert all(0 < s < 1 for s in task_scores), f"Invalid task score(s): {task_scores}"
 
     print("TASK SCORES:", task_scores)
-    print("AGG SCORE:", output["aggregate_score"])
+    print("AGG SCORE:", aggregate_score)
 
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
